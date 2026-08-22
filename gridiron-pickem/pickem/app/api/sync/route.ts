@@ -25,7 +25,7 @@ export async function GET(request: NextRequest) {
 
   try {
     const [teams, thisWeek, lastWeek, top25] = await Promise.all([
-      fetchTeams(),
+            fetchTeams(season),
       fetchGames({ year: season, week }),
       week > 1 ? fetchGames({ year: season, week: week - 1 }) : Promise.resolve([]),
       fetchTop25({ year: season, week }),
