@@ -1,145 +1,99 @@
-const CFBD_BASE = 'https://api.collegefootballdata.com';
+import { NextResponse, type NextRequest } from 'next/server';
+import { createServiceClient } from '@/lib/supabase/server';
+import { fetchGames, fetchTeams, fetchTop25, currentSeasonAndWeek } from '@/lib/cfbd';
 
-export type CfbdGame = {
-  id: number;
-  season: number;
-  week: number;
-  season_type: string;
-  start_date: string;
-  completed: boolean;
-  home_id: number;
-  home_team: string;
-  home_points: number | null;
-  away_id: number;
-  away_team: string;
-  away_points: number | null;
-};
+export const dynamic = 'force-dynamic';
 
-export type CfbdTeam = {
-  id: number;
-  school: string;
-  mascot: string | null;
-  conference: string | null;
-  logos: string[] | null;
-};
+function isAuthorized(request: NextRequest): boolean {
+  const secret = process.env.CRON_SECRET;
+  if (!secret) return false;
 
-function authHeaders() {
-  const key = process.env.CFBD_API_KEY;
-  if (!key) throw new Error('CFBD_API_KEY is not set');
-  return {
-    Authorization: `Bearer ${key}`,
-    Accept: 'application/json',
-  };
+  const authHeader = request.headers.get('authorization');
+  if (authHeader === `Bearer ${secret}`) return true;
+
+  const querySecret = request.nextUrl.searchParams.get('secret');
+  return querySecret === secret;
 }
 
-export async function fetchGames(opts: {
-  year: number;
-  week?: number;
-  seasonType?: 'regular' | 'postseason';
-}): Promise<CfbdGame[]> {
-  const params = new URLSearchParams({
-    year: String(opts.year),
-    division: 'fbs',
-    seasonType: opts.seasonType ?? 'regular',
-  });
-  if (opts.week) params.set('week', String(opts.week));
-
-  const res = await fetch(`${CFBD_BASE}/games?${params.toString()}`, {
-    headers: authHeaders(),
-    cache: 'no-store',
-  });
-
-  if (!res.ok) {
-    throw new Error(`CFBD /games failed: ${res.status} ${await res.text()}`);
+export async function GET(request: NextRequest) {
+  if (!isAuthorized(request)) {
+    return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
   }
 
-  const raw = await res.json();
+  const supabase = createServiceClient();
+  const { season, week } = currentSeasonAndWeek();
 
-  return raw.map((g: Record<string, unknown>): CfbdGame => ({
-    id: g.id as number,
-    season: g.season as number,
-    week: g.week as number,
-    season_type: (g.seasonType ?? g.season_type) as string,
-    start_date: (g.startDate ?? g.start_date) as string,
-    completed: Boolean(g.completed),
-    home_id: (g.homeId ?? g.home_id) as number,
-    home_team: (g.homeTeam ?? g.home_team) as string,
-    home_points: (g.homePoints ?? g.home_points) as number | null,
-    away_id: (g.awayId ?? g.away_id) as number,
-    away_team: (g.awayTeam ?? g.away_team) as string,
-    away_points: (g.awayPoints ?? g.away_points) as number | null,
-  }));
-}
+  try {
+    const [teams, thisWeek, lastWeek, top25] = await Promise.all([
+      fetchTeams(season),
+      fetchGames({ year: season, week }),
+      week > 1 ? fetchGames({ year: season, week: week - 1 }) : Promise.resolve([]),
+      fetchTop25({ year: season, week }),
+    ]);
 
-export async function fetchTeams(year: number): Promise<CfbdTeam[]> {
-  // Pass `year` so we get the team roster as it existed for that season —
-  // team IDs/classifications can shift year to year (realignment, renamed
-  // or relocated programs), and the schedule for `year` may reference a
-  // team that isn't in CFBD's undated default list.
-  const res = await fetch(`${CFBD_BASE}/teams?year=${year}`, {
-    headers: authHeaders(),
-    next: { revalidate: 60 * 60 * 24 },
-  });
+    const teamRows = teams.map((t) => ({
+      id: t.id,
+      school: t.school,
+      mascot: t.mascot,
+      conference: t.conference,
+      logo_url: t.logos?.[0] ? t.logos[0].replace(/^http:\/\//, 'https://') : null,
+    }));
 
-  if (!res.ok) {
-    throw new Error(`CFBD /teams failed: ${res.status} ${await res.text()}`);
-  }
-
-  const raw = await res.json();
-  return raw.map((t: Record<string, unknown>): CfbdTeam => ({
-    id: t.id as number,
-    school: t.school as string,
-    mascot: (t.mascot ?? null) as string | null,
-    conference: (t.conference ?? null) as string | null,
-    logos: (t.logos ?? null) as string[] | null,
-  }));
-}
-
-/** Maps school name -> AP Top 25 rank for the given week. */
-export async function fetchTop25(opts: {
-  year: number;
-  week: number;
-  seasonType?: 'regular' | 'postseason';
-}): Promise<Map<string, number>> {
-  const params = new URLSearchParams({
-    year: String(opts.year),
-    seasonType: opts.seasonType ?? 'regular',
-    week: String(opts.week),
-  });
-
-  const res = await fetch(`${CFBD_BASE}/rankings?${params.toString()}`, {
-    headers: authHeaders(),
-    cache: 'no-store',
-  });
-
-  if (!res.ok) {
-    console.error(`CFBD /rankings failed: ${res.status} ${await res.text()}`);
-    return new Map();
-  }
-
-  const raw = await res.json();
-  const ranks = new Map<string, number>();
-  for (const weekEntry of raw as Array<{
-    polls?: Array<{ poll: string; ranks: Array<{ school: string; rank: number }> }>;
-  }>) {
-    for (const poll of weekEntry.polls ?? []) {
-      if (poll.poll === 'AP Top 25') {
-        for (const r of poll.ranks) ranks.set(r.school, r.rank);
-      }
+    if (teamRows.length > 0) {
+      const { error } = await supabase.from('teams').upsert(teamRows);
+      if (error) throw error;
     }
-  }
-  return ranks;
-}
 
-/** Which CFB week "now" falls in, using the regular season's Tuesday-to-Tuesday
- *  week boundaries. Falls back to week 1 before the season starts. */
-export function currentSeasonAndWeek(now = new Date()): { season: number; week: number } {
-  const year = now.getUTCFullYear();
-  const seasonStart = new Date(Date.UTC(year, 7, 24));
-  if (now < seasonStart) {
-    return { season: year, week: 1 };
+    const confByTeamId = new Map(teams.map((t) => [t.id, t.conference]));
+
+    const games = [...lastWeek, ...thisWeek];
+    const gameRows = games.map((g) => {
+      const homeRank = top25.get(g.home_team) ?? null;
+      const awayRank = top25.get(g.away_team) ?? null;
+      const isRanked = homeRank !== null || awayRank !== null;
+      const isSecMatchup =
+        confByTeamId.get(g.home_id) === 'SEC' && confByTeamId.get(g.away_id) === 'SEC';
+
+      return {
+        id: g.id,
+        season: g.season,
+        week: g.week,
+        season_type: g.season_type,
+        start_date: g.start_date,
+        home_team_id: g.home_id,
+        away_team_id: g.away_id,
+        home_points: g.home_points,
+        away_points: g.away_points,
+        completed: g.completed,
+        winner_team_id: g.completed
+          ? (g.home_points ?? 0) > (g.away_points ?? 0)
+            ? g.home_id
+            : g.away_id
+          : null,
+        featured: isRanked || isSecMatchup,
+        home_rank: homeRank,
+        away_rank: awayRank,
+      };
+    });
+
+    if (gameRows.length > 0) {
+      const { error } = await supabase.from('games').upsert(gameRows);
+      if (error) throw error;
+    }
+
+    return NextResponse.json({
+      ok: true,
+      season,
+      week,
+      teamsSynced: teamRows.length,
+      gamesSynced: gameRows.length,
+      rankedSchoolsFound: top25.size,
+    });
+  } catch (err) {
+    console.error('sync failed', err);
+    return NextResponse.json(
+      { error: err instanceof Error ? err.message : 'sync failed' },
+      { status: 500 }
+    );
   }
-  const diffMs = now.getTime() - seasonStart.getTime();
-  const week = Math.min(15, Math.max(1, Math.floor(diffMs / (7 * 24 * 60 * 60 * 1000)) + 1));
-  return { season: year, week };
 }
