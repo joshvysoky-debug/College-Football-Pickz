@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import Image from 'next/image';
 import { createClient } from '@/lib/supabase/client';
 
 export default function LoginPage() {
@@ -27,11 +28,20 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="mx-auto mt-16 max-w-sm">
+    <div className="mx-auto mt-12 max-w-sm">
+      <div className="mb-8 flex justify-center">
+        <Image
+          src="/CFB%20Game%20Time%20Full.png"
+          alt="CFB Game Time"
+          width={1062}
+          height={618}
+          priority
+          className="h-40 w-auto sm:h-48"
+        />
+      </div>
+
       <div className="stub-notch rounded-lg border border-field-line bg-field-panel px-8 py-10 shadow-glow">
-        <p className="font-score text-xs uppercase tracking-[0.3em] text-bulb">Week 0 &middot; Kickoff</p>
-        <h1 className="mt-2 font-display text-4xl tracking-wide text-chalk">Gridiron Pick&rsquo;em</h1>
-        <p className="mt-3 text-sm text-muted">
+        <p className="text-sm text-muted">
           Enter your email and we&rsquo;ll send a link to sign in. No password to remember.
         </p>
 
