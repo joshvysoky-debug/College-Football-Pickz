@@ -93,17 +93,41 @@ export async function fetchTeams(): Promise<CfbdTeam[]> {
   }));
 }
 
-/** Returns the set of school names currently in the AP Top 25. */
+/** Maps school name -> AP Top 25 rank for the given week. */
 export async function fetchTop25(opts: {
   year: number;
   week: number;
   seasonType?: 'regular' | 'postseason';
-}): Promise<Set<string>> {
+}): Promise<Map<string, number>> {
   const params = new URLSearchParams({
     year: String(opts.year),
     seasonType: opts.seasonType ?? 'regular',
     week: String(opts.week),
   });
+
+  const res = await fetch(`${CFBD_BASE}/rankings?${params.toString()}`, {
+    headers: authHeaders(),
+    cache: 'no-store',
+  });
+
+  if (!res.ok) {
+    console.error(`CFBD /rankings failed: ${res.status} ${await res.text()}`);
+    return new Map();
+  }
+
+  const raw = await res.json();
+  const ranks = new Map<string, number>();
+  for (const weekEntry of raw as Array<{
+    polls?: Array<{ poll: string; ranks: Array<{ school: string; rank: number }> }>;
+  }>) {
+    for (const poll of weekEntry.polls ?? []) {
+      if (poll.poll === 'AP Top 25') {
+        for (const r of poll.ranks) ranks.set(r.school, r.rank);
+      }
+    }
+  }
+  return ranks;
+}
 
   const res = await fetch(`${CFBD_BASE}/rankings?${params.toString()}`, {
     headers: authHeaders(),
