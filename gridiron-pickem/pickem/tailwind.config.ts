@@ -6,22 +6,23 @@ const config: Config = {
     extend: {
       colors: {
         field: {
-          night: '#0B1220', // night sky / stadium bowl
-          panel: '#141B2E', // card surface
-          panel2: '#1B2440', // raised surface
-          line: '#2A3454', // hairlines, yard-line strokes
+          night: '#08090B', // midnight black - main background
+          panel: '#12151A', // charcoal - cards / panels
+          panel2: '#1D222A', // raised surface
+          line: '#29303C', // hairlines, yard-line strokes
         },
         turf: {
-          DEFAULT: '#2F5233',
-          bright: '#4C7A4F',
+          DEFAULT: '#1B643A',
+          bright: '#31B56A', // pick green - correct picks / wins
         },
         bulb: {
-          DEFAULT: '#DEA138', // scoreboard amber, tuned to match the logo's metallic gold
-          dim: '#A07428',
+          DEFAULT: '#C9A227', // championship gold - primary accent
+          bright: '#E3C45C', // bright gold - hover / highlights
+          dim: '#8D711B', // darker gold - hover state on filled gold buttons
         },
-        chalk: '#E8E6DE', // off-white text, not the cliche cream
-        miss: '#C4432B',
-        muted: '#8A93AD',
+        chalk: '#F4F4F1', // off white - main text
+        miss: '#E05252', // loss red - incorrect picks
+        muted: '#8B919A', // slate gray - secondary text
       },
       fontFamily: {
         display: ['var(--font-display)'],
@@ -32,7 +33,7 @@ const config: Config = {
         turf: 'repeating-linear-gradient(90deg, rgba(255,255,255,0.02) 0px, rgba(255,255,255,0.02) 2px, transparent 2px, transparent 40px)',
       },
       boxShadow: {
-        glow: '0 0 24px rgba(245,166,35,0.25)',
+        glow: '0 0 24px rgba(201,162,39,0.25)',
       },
     },
   },
