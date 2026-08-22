@@ -38,6 +38,23 @@ export default function GameCard({
     if (locked) return;
     setError(null);
     const previous = pick;
+
+    // Clicking the already-selected team clears the pick.
+    if (pick === teamId) {
+      setPick(null); // optimistic
+      startTransition(async () => {
+        const res = await fetch(`/api/picks?gameId=${game.id}`, { method: 'DELETE' });
+        if (!res.ok) {
+          setPick(previous);
+          const body = await res.json().catch(() => ({}));
+          setError(body.error ?? 'Could not clear pick');
+        } else {
+          router.refresh();
+        }
+      });
+      return;
+    }
+
     setPick(teamId); // optimistic
 
     startTransition(async () => {
@@ -165,7 +182,9 @@ function TeamRow({
           <span className="font-score text-lg tabular text-chalk">{side.points ?? '-'}</span>
         )}
         {selected && !isFinal && (
-          <span className="font-score text-[10px] uppercase tracking-widest text-bulb">Your pick</span>
+          <span className="font-score text-[10px] uppercase tracking-widest text-bulb">
+            Your pick &middot; tap to clear
+          </span>
         )}
       </span>
     </button>
