@@ -48,9 +48,11 @@ export async function GET(request: NextRequest) {
 
     const confByTeamId = new Map(teams.map((t) => [t.id, t.conference]));
 
-    const games = [...lastWeek, ...thisWeek];
+        const games = [...lastWeek, ...thisWeek];
     const gameRows = games.map((g) => {
-      const isRanked = top25.has(g.home_team) || top25.has(g.away_team);
+      const homeRank = top25.get(g.home_team) ?? null;
+      const awayRank = top25.get(g.away_team) ?? null;
+      const isRanked = homeRank !== null || awayRank !== null;
       const isSecMatchup =
         confByTeamId.get(g.home_id) === 'SEC' && confByTeamId.get(g.away_id) === 'SEC';
 
@@ -71,6 +73,8 @@ export async function GET(request: NextRequest) {
             : g.away_id
           : null,
         featured: isRanked || isSecMatchup,
+        home_rank: homeRank,
+        away_rank: awayRank,
       };
     });
 
