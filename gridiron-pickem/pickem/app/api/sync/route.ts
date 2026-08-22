@@ -25,7 +25,7 @@ export async function GET(request: NextRequest) {
 
   try {
     const [teams, thisWeek, lastWeek, top25] = await Promise.all([
-            fetchTeams(season),
+      fetchTeams(season),
       fetchGames({ year: season, week }),
       week > 1 ? fetchGames({ year: season, week: week - 1 }) : Promise.resolve([]),
       fetchTop25({ year: season, week }),
@@ -36,8 +36,6 @@ export async function GET(request: NextRequest) {
       school: t.school,
       mascot: t.mascot,
       conference: t.conference,
-      // CFBD serves these over plain http; normalize so Next's image
-      // optimizer (https-only allowlist) doesn't silently drop them.
       logo_url: t.logos?.[0] ? t.logos[0].replace(/^http:\/\//, 'https://') : null,
     }));
 
@@ -48,7 +46,7 @@ export async function GET(request: NextRequest) {
 
     const confByTeamId = new Map(teams.map((t) => [t.id, t.conference]));
 
-        const games = [...lastWeek, ...thisWeek];
+    const games = [...lastWeek, ...thisWeek];
     const gameRows = games.map((g) => {
       const homeRank = top25.get(g.home_team) ?? null;
       const awayRank = top25.get(g.away_team) ?? null;
