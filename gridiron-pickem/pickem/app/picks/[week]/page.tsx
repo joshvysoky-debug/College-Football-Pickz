@@ -21,6 +21,7 @@ export default async function WeekPage({ params }: { params: { week: string } })
       .select('*')
       .eq('season', season)
       .eq('week', week)
+      .eq('featured', true)
       .order('start_date', { ascending: true }),
     supabase.from('teams').select('*'),
     user
