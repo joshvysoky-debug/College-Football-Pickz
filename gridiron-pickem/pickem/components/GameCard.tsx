@@ -5,12 +5,15 @@ import Image from 'next/image';
 import { useRouter } from 'next/navigation';
 import Countdown from '@/components/Countdown';
 import { formatGameDateTimeCT } from '@/lib/dateFormat';
+import type { LastWeekResult } from '@/lib/teamStats';
 import type { Game, Team } from '@/lib/database.types';
 
 type TeamSide = {
   team: Team;
   points: number | null;
   rank: number | null;
+  record?: string;
+  lastWeek?: LastWeekResult;
 };
 
 export default function GameCard({
@@ -133,10 +136,26 @@ function TeamRow({
             className="h-7 w-7 object-contain"
           />
         )}
-        <span className="flex flex-col">
-          <span className={`font-display text-xl tracking-wide ${winner ? 'text-turf-bright' : 'text-chalk'}`}>
-            {side.rank !== null && <span className="text-bulb">#{side.rank} </span>}
-            {side.team.school}
+        <span className="flex flex-col gap-0.5">
+          <span className="flex flex-wrap items-baseline gap-x-2">
+            <span className={`font-display text-xl tracking-wide ${winner ? 'text-turf-bright' : 'text-chalk'}`}>
+              {side.rank !== null && <span className="text-bulb">#{side.rank} </span>}
+              {side.team.school}
+            </span>
+            {side.record && (
+              <span className="font-score text-xs text-muted">{side.record}</span>
+            )}
+            {side.lastWeek?.kind === 'bye' && (
+              <span className="font-score text-xs text-muted">Bye Week</span>
+            )}
+            {side.lastWeek?.kind === 'result' && (
+              <span className="font-score text-xs text-muted">
+                <span className={side.lastWeek.won ? 'text-turf-bright' : 'text-miss'}>
+                  {side.lastWeek.won ? 'W' : 'L'}
+                </span>{' '}
+                {side.lastWeek.teamScore}-{side.lastWeek.oppScore} vs {side.lastWeek.opponent}
+              </span>
+            )}
           </span>
           {homeLabel && <span className="text-[10px] uppercase tracking-widest text-muted">Home</span>}
         </span>
