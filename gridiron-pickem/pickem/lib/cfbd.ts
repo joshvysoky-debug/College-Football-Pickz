@@ -74,7 +74,7 @@ export async function fetchGames(opts: {
 }
 
 export async function fetchTeams(): Promise<CfbdTeam[]> {
-  const res = await fetch(`${CFBD_BASE}/teams/fbs`, {
+  const res = await fetch(`${CFBD_BASE}/teams/`, {
     headers: authHeaders(),
     next: { revalidate: 60 * 60 * 24 },
   });
