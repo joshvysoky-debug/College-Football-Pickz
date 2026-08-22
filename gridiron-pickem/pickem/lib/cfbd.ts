@@ -46,7 +46,6 @@ export async function fetchGames(opts: {
 
   const res = await fetch(`${CFBD_BASE}/games?${params.toString()}`, {
     headers: authHeaders(),
-    // Always get fresh scores; this is only ever called from the sync route.
     cache: 'no-store',
   });
 
@@ -56,7 +55,6 @@ export async function fetchGames(opts: {
 
   const raw = await res.json();
 
-  // CFBD's field names have shifted between API versions; normalize both.
   return raw.map((g: Record<string, unknown>): CfbdGame => ({
     id: g.id as number,
     season: g.season as number,
@@ -73,8 +71,12 @@ export async function fetchGames(opts: {
   }));
 }
 
-export async function fetchTeams(): Promise<CfbdTeam[]> {
-  const res = await fetch(`${CFBD_BASE}/teams/`, {
+export async function fetchTeams(year: number): Promise<CfbdTeam[]> {
+  // Pass `year` so we get the team roster as it existed for that season —
+  // team IDs/classifications can shift year to year (realignment, renamed
+  // or relocated programs), and the schedule for `year` may reference a
+  // team that isn't in CFBD's undated default list.
+  const res = await fetch(`${CFBD_BASE}/teams?year=${year}`, {
     headers: authHeaders(),
     next: { revalidate: 60 * 60 * 24 },
   });
@@ -133,7 +135,6 @@ export async function fetchTop25(opts: {
  *  week boundaries. Falls back to week 1 before the season starts. */
 export function currentSeasonAndWeek(now = new Date()): { season: number; week: number } {
   const year = now.getUTCFullYear();
-  // Regular season effectively starts the last weekend of August.
   const seasonStart = new Date(Date.UTC(year, 7, 24));
   if (now < seasonStart) {
     return { season: year, week: 1 };
