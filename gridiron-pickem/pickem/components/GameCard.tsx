@@ -9,6 +9,7 @@ import type { Game, Team } from '@/lib/database.types';
 type TeamSide = {
   team: Team;
   points: number | null;
+  rank: number | null;
 };
 
 export default function GameCard({
@@ -101,7 +102,7 @@ function TeamRow({
   onChoose,
   homeLabel,
 }: {
-  side: { team: Team; points: number | null };
+  side: TeamSide;
   selected: boolean;
   winner: boolean;
   disabled: boolean;
@@ -129,6 +130,7 @@ function TeamRow({
         )}
         <span className="flex flex-col">
           <span className={`font-display text-xl tracking-wide ${winner ? 'text-turf-bright' : 'text-chalk'}`}>
+            {side.rank !== null && <span className="text-bulb">#{side.rank} </span>}
             {side.team.school}
           </span>
           {homeLabel && <span className="text-[10px] uppercase tracking-widest text-muted">Home</span>}
