@@ -80,7 +80,7 @@ export async function fetchTeams(): Promise<CfbdTeam[]> {
   });
 
   if (!res.ok) {
-    throw new Error(`CFBD /teams/fbs failed: ${res.status} ${await res.text()}`);
+    throw new Error(`CFBD /teams failed: ${res.status} ${await res.text()}`);
   }
 
   const raw = await res.json();
