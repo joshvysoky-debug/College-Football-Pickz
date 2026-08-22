@@ -2,6 +2,7 @@
 const nextConfig = {
   images: {
     remotePatterns: [
+      { protocol: 'https', hostname: 'cdn.collegefootballdata.com' },
       { protocol: 'https', hostname: '**.espncdn.com' },
       { protocol: 'https', hostname: 'a.espncdn.com' },
     ],
