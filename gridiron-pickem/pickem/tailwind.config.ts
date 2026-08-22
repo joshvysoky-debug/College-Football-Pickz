@@ -16,8 +16,8 @@ const config: Config = {
           bright: '#4C7A4F',
         },
         bulb: {
-          DEFAULT: '#F5A623', // scoreboard amber
-          dim: '#B8791A',
+          DEFAULT: '#DEA138', // scoreboard amber, tuned to match the logo's metallic gold
+          dim: '#A07428',
         },
         chalk: '#E8E6DE', // off-white text, not the cliche cream
         miss: '#C4432B',
