@@ -18,6 +18,7 @@ export type Game = {
   away_points: number | null;
   completed: boolean;
   winner_team_id: number | null;
+  featured: boolean;
 };
 
 export type Profile = {
