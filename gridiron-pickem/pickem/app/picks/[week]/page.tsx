@@ -3,6 +3,7 @@ import { createClient } from '@/lib/supabase/server';
 import GameCard from '@/components/GameCard';
 import { currentSeasonAndWeek } from '@/lib/cfbd';
 import { formatWeekDateRange } from '@/lib/dateFormat';
+import { buildTeamStats, type TeamStats } from '@/lib/teamStats';
 import type { Game, Team } from '@/lib/database.types';
 
 export const dynamic = 'force-dynamic';
@@ -33,6 +34,46 @@ export default async function WeekPage({ params }: { params: { week: string } })
   const teamById = new Map<number, Team>((teams ?? []).map((t) => [t.id, t]));
   const pickByGame = new Map((myPicks ?? []).map((p) => [p.game_id, p.picked_team_id]));
   const dateRange = formatWeekDateRange((games ?? []).map((g) => g.start_date));
+
+  // Records + last week's results for every team playing this week.
+  const gameTeamIds = Array.from(
+    new Set(
+      (games ?? [])
+        .flatMap((g) => [g.home_team_id, g.away_team_id])
+        .filter((id): id is number => id !== null)
+    )
+  );
+
+  let teamStats = new Map<number, TeamStats>();
+
+  if (gameTeamIds.length > 0) {
+    const idsList = gameTeamIds.join(',');
+    const [{ data: recordGames }, { data: lastWeekGames }] = await Promise.all([
+      supabase
+        .from('games')
+        .select('*')
+        .eq('season', season)
+        .eq('completed', true)
+        .lt('week', week)
+        .or(`home_team_id.in.(${idsList}),away_team_id.in.(${idsList})`),
+      week > 1
+        ? supabase
+            .from('games')
+            .select('*')
+            .eq('season', season)
+            .eq('week', week - 1)
+            .or(`home_team_id.in.(${idsList}),away_team_id.in.(${idsList})`)
+        : Promise.resolve({ data: [] as Game[] }),
+    ]);
+
+    teamStats = buildTeamStats({
+      teamIds: gameTeamIds,
+      week,
+      recordGames: (recordGames ?? []) as Game[],
+      lastWeekGames: (lastWeekGames ?? []) as Game[],
+      teamById,
+    });
+  }
 
   return (
     <div className="space-y-6">
@@ -71,8 +112,18 @@ export default async function WeekPage({ params }: { params: { week: string } })
               <GameCard
                 key={game.id}
                 game={game}
-                home={{ team: home, points: game.home_points, rank: game.home_rank }}
-                away={{ team: away, points: game.away_points, rank: game.away_rank }}
+                home={{
+                  team: home,
+                  points: game.home_points,
+                  rank: game.home_rank,
+                  ...teamStats.get(home.id),
+                }}
+                away={{
+                  team: away,
+                  points: game.away_points,
+                  rank: game.away_rank,
+                  ...teamStats.get(away.id),
+                }}
                 myPick={pickByGame.get(game.id) ?? null}
                 locked={new Date(game.start_date) <= new Date()}
               />
