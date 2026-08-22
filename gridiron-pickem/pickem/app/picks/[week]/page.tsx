@@ -64,8 +64,8 @@ export default async function WeekPage({ params }: { params: { week: string } })
               <GameCard
                 key={game.id}
                 game={game}
-                home={{ team: home, points: game.home_points }}
-                away={{ team: away, points: game.away_points }}
+                home={{ team: home, points: game.home_points, rank: game.home_rank }}
+                away={{ team: away, points: game.away_points, rank: game.away_rank }}
                 myPick={pickByGame.get(game.id) ?? null}
                 locked={new Date(game.start_date) <= new Date()}
               />
