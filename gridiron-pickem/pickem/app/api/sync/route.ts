@@ -39,14 +39,34 @@ export async function GET(request: NextRequest) {
       logo_url: t.logos?.[0] ? t.logos[0].replace(/^http:\/\//, 'https://') : null,
     }));
 
+    const knownTeamIds = new Set(teamRows.map((t) => t.id));
+
+    const games = [...lastWeek, ...thisWeek];
+
+    // CFBD's /teams endpoint only covers that season's FBS roster. Games
+    // against FCS/lower-division opponents (common in early-season "money
+    // games") reference a team id that never shows up there. Without some
+    // row for that id, the pick'em UI has no name to render and has to hide
+    // the whole matchup - so backfill a minimal team row straight from the
+    // game payload, which always carries the opponent's name even when
+    // CFBD's team list doesn't.
+    for (const g of games) {
+      if (!knownTeamIds.has(g.home_id)) {
+        teamRows.push({ id: g.home_id, school: g.home_team, mascot: null, conference: null, logo_url: null });
+        knownTeamIds.add(g.home_id);
+      }
+      if (!knownTeamIds.has(g.away_id)) {
+        teamRows.push({ id: g.away_id, school: g.away_team, mascot: null, conference: null, logo_url: null });
+        knownTeamIds.add(g.away_id);
+      }
+    }
+
     if (teamRows.length > 0) {
       const { error } = await supabase.from('teams').upsert(teamRows);
       if (error) throw error;
     }
 
     const confByTeamId = new Map(teams.map((t) => [t.id, t.conference]));
-
-    const games = [...lastWeek, ...thisWeek];
     const gameRows = games.map((g) => {
       const homeRank = top25.get(g.home_team) ?? null;
       const awayRank = top25.get(g.away_team) ?? null;
