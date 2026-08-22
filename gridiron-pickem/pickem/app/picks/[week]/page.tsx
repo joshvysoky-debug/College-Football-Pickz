@@ -2,6 +2,7 @@ import Link from 'next/link';
 import { createClient } from '@/lib/supabase/server';
 import GameCard from '@/components/GameCard';
 import { currentSeasonAndWeek } from '@/lib/cfbd';
+import { formatWeekDateRange } from '@/lib/dateFormat';
 import type { Game, Team } from '@/lib/database.types';
 
 export const dynamic = 'force-dynamic';
@@ -31,11 +32,17 @@ export default async function WeekPage({ params }: { params: { week: string } })
 
   const teamById = new Map<number, Team>((teams ?? []).map((t) => [t.id, t]));
   const pickByGame = new Map((myPicks ?? []).map((p) => [p.game_id, p.picked_team_id]));
+  const dateRange = formatWeekDateRange((games ?? []).map((g) => g.start_date));
 
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <h1 className="font-display text-3xl tracking-wide text-chalk">Week {week}</h1>
+        <div>
+          <h1 className="font-display text-3xl tracking-wide text-chalk">Week {week}</h1>
+          {dateRange && (
+            <p className="mt-1 font-score text-xs text-muted">{dateRange}</p>
+          )}
+        </div>
         <div className="flex gap-2 font-score text-sm">
           <Link
             href={`/picks/${Math.max(1, week - 1)}`}
