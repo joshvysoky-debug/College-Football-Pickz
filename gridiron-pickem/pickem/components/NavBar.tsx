@@ -24,10 +24,10 @@ export default async function NavBar() {
         </Link>
         {user && (
           <nav className="flex items-center gap-5 text-sm">
-            <Link href="/" className="text-muted transition hover:text-chalk">
+            <Link href="/" className="text-muted transition hover:text-bulb-bright">
               This week
             </Link>
-            <Link href="/standings" className="text-muted transition hover:text-chalk">
+            <Link href="/standings" className="text-muted transition hover:text-bulb-bright">
               Standings
             </Link>
             <SignOutButton />
