@@ -4,6 +4,7 @@ import { useState, useTransition } from 'react';
 import Image from 'next/image';
 import { useRouter } from 'next/navigation';
 import Countdown from '@/components/Countdown';
+import { formatGameDateTimeCT } from '@/lib/dateFormat';
 import type { Game, Team } from '@/lib/database.types';
 
 type TeamSide = {
@@ -58,11 +59,15 @@ export default function GameCard({
     <div className="stub-notch flex overflow-hidden rounded-lg border border-field-line bg-field-panel">
       <div className="flex flex-1 flex-col gap-3 p-5">
         <div className="flex items-center justify-between">
-          {isFinal ? (
-            <span className="font-score text-xs uppercase tracking-widest text-muted">Final</span>
-          ) : (
-            <Countdown startDate={game.start_date} />
-          )}
+          <span className="font-score text-xs tabular text-muted">
+            {formatGameDateTimeCT(game.start_date)}
+            <span className="mx-1.5">&middot;</span>
+            {isFinal ? (
+              <span className="uppercase tracking-widest text-muted">Final</span>
+            ) : (
+              <Countdown startDate={game.start_date} />
+            )}
+          </span>
           {error && <span className="text-xs text-miss">{error}</span>}
         </div>
 
