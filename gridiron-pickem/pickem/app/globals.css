@@ -7,20 +7,20 @@ html {
 }
 
 body {
-  background-color: #0B1220;
+  background-color: #08090B;
   background-image:
-    radial-gradient(ellipse 80% 50% at 50% -20%, rgba(245, 166, 35, 0.08), transparent),
+    radial-gradient(ellipse 80% 50% at 50% -20%, rgba(201, 162, 39, 0.08), transparent),
     repeating-linear-gradient(180deg, rgba(255,255,255,0.015) 0px, rgba(255,255,255,0.015) 1px, transparent 1px, transparent 3px);
-  color: #E8E6DE;
+  color: #F4F4F1;
 }
 
 ::selection {
-  background: #F5A623;
-  color: #0B1220;
+  background: #C9A227;
+  color: #08090B;
 }
 
 :focus-visible {
-  outline: 2px solid #F5A623;
+  outline: 2px solid #C9A227;
   outline-offset: 2px;
   border-radius: 2px;
 }
@@ -46,7 +46,7 @@ body {
   transform: translateY(-50%);
   width: 16px;
   height: 16px;
-  background: #0B1220;
+  background: #08090B;
   border-radius: 9999px;
   z-index: 10;
 }
@@ -54,7 +54,7 @@ body {
 .stub-notch::after { right: -9px; }
 
 .stub-perf {
-  background-image: repeating-linear-gradient(180deg, #2A3454 0, #2A3454 6px, transparent 6px, transparent 12px);
+  background-image: repeating-linear-gradient(180deg, #29303C 0, #29303C 6px, transparent 6px, transparent 12px);
   width: 1px;
 }
 
