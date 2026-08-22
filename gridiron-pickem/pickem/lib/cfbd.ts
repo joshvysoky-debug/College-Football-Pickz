@@ -93,6 +93,43 @@ export async function fetchTeams(): Promise<CfbdTeam[]> {
   }));
 }
 
+/** Returns the set of school names currently in the AP Top 25. */
+export async function fetchTop25(opts: {
+  year: number;
+  week: number;
+  seasonType?: 'regular' | 'postseason';
+}): Promise<Set<string>> {
+  const params = new URLSearchParams({
+    year: String(opts.year),
+    seasonType: opts.seasonType ?? 'regular',
+    week: String(opts.week),
+  });
+
+  const res = await fetch(`${CFBD_BASE}/rankings?${params.toString()}`, {
+    headers: authHeaders(),
+    cache: 'no-store',
+  });
+
+  if (!res.ok) {
+    // Don't fail the whole sync if rankings are briefly unavailable early in the week.
+    console.error(`CFBD /rankings failed: ${res.status} ${await res.text()}`);
+    return new Set();
+  }
+
+  const raw = await res.json();
+  const schools = new Set<string>();
+  for (const weekEntry of raw as Array<{
+    polls?: Array<{ poll: string; ranks: Array<{ school: string }> }>;
+  }>) {
+    for (const poll of weekEntry.polls ?? []) {
+      if (poll.poll === 'AP Top 25') {
+        for (const r of poll.ranks) schools.add(r.school);
+      }
+    }
+  }
+  return schools;
+}
+
 /** Which CFB week "now" falls in, using the regular season's Tuesday-to-Tuesday
  *  week boundaries. Falls back to week 1 before the season starts. */
 export function currentSeasonAndWeek(now = new Date()): { season: number; week: number } {
