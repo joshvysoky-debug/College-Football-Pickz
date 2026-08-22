@@ -47,3 +47,48 @@ export async function POST(request: Request) {
 
   return NextResponse.json({ ok: true });
 }
+
+export async function DELETE(request: Request) {
+  const supabase = createClient();
+
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) {
+    return NextResponse.json({ error: 'not signed in' }, { status: 401 });
+  }
+
+  const { searchParams } = new URL(request.url);
+  const gameId = Number(searchParams.get('gameId'));
+
+  if (!gameId) {
+    return NextResponse.json({ error: 'gameId is required' }, { status: 400 });
+  }
+
+  // RLS also enforces the kickoff lock; this just gives a clean error message.
+  const { data: game } = await supabase
+    .from('games')
+    .select('start_date')
+    .eq('id', gameId)
+    .single();
+
+  if (!game) {
+    return NextResponse.json({ error: 'game not found' }, { status: 404 });
+  }
+  if (new Date(game.start_date) <= new Date()) {
+    return NextResponse.json({ error: 'picks are locked for this game' }, { status: 403 });
+  }
+
+  const { error } = await supabase
+    .from('picks')
+    .delete()
+    .eq('user_id', user.id)
+    .eq('game_id', gameId);
+
+  if (error) {
+    return NextResponse.json({ error: error.message }, { status: 400 });
+  }
+
+  return NextResponse.json({ ok: true });
+}
