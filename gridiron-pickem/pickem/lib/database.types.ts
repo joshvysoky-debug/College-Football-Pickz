@@ -19,6 +19,8 @@ export type Game = {
   completed: boolean;
   winner_team_id: number | null;
   featured: boolean;
+  home_rank: number | null;
+  away_rank: number | null;
 };
 
 export type Profile = {
