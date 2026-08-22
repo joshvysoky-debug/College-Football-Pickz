@@ -14,7 +14,7 @@ export default function SignOutButton() {
         router.push('/login');
         router.refresh();
       }}
-      className="text-muted transition hover:text-chalk"
+      className="text-muted transition hover:text-bulb-bright"
     >
       Sign out
     </button>
