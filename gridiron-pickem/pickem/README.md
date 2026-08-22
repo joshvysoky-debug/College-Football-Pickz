@@ -92,3 +92,5 @@ npm run dev
   December if your pool runs through bowls.
 - Straight-up picks only, as requested — no spread, no confidence points.
   If you want to add those formats later, the data model has room for it.
+
+  
