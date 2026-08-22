@@ -8,4 +8,4 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Call sync endpoint
-        run: curl -sf "https://cfbpickz.vercel.app/api/sync?secret=${{ secrets.CRON_SECRET }}"
+        run: curl -sf "https://cfbgametime.vercel.app/api/sync?secret=${{ secrets.CRON_SECRET }}"
