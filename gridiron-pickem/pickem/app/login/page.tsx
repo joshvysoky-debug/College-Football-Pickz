@@ -40,6 +40,10 @@ export default function LoginPage() {
         />
       </div>
 
+      <p className="mb-8 text-center font-display text-2xl tracking-wide text-chalk sm:text-3xl">
+        It&rsquo;s football time in <span className="text-bulb">Tennessee</span>
+      </p>
+
       <div className="rounded-lg border border-field-line bg-field-panel px-8 py-10 shadow-glow">
         <p className="text-sm text-muted">
           Enter your email and we&rsquo;ll send a link to sign in. No password to remember.
