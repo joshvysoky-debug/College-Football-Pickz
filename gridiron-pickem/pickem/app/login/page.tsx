@@ -40,7 +40,7 @@ export default function LoginPage() {
         />
       </div>
 
-      <div className="stub-notch rounded-lg border border-field-line bg-field-panel px-8 py-10 shadow-glow">
+      <div className="rounded-lg border border-field-line bg-field-panel px-8 py-10 shadow-glow">
         <p className="text-sm text-muted">
           Enter your email and we&rsquo;ll send a link to sign in. No password to remember.
         </p>
