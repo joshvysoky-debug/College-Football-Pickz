@@ -38,6 +38,9 @@ export default async function NavBar() {
             <Link href="/standings" className="text-muted transition hover:text-bulb-bright">
               Standings
             </Link>
+            <Link href="/profile" className="text-muted transition hover:text-bulb-bright">
+              Profile
+            </Link>
             <SignOutButton />
           </nav>
         )}
