@@ -1,148 +1,38 @@
-import Link from 'next/link';
+import { redirect } from 'next/navigation';
 import { createClient } from '@/lib/supabase/server';
-import GameCard from '@/components/GameCard';
-import { currentSeasonAndWeek } from '@/lib/cfbd';
-import { formatWeekDateRange } from '@/lib/dateFormat';
-import { buildTeamStats, type TeamStats } from '@/lib/teamStats';
-import type { Game, Team } from '@/lib/database.types';
+import ProfileForm from '@/components/ProfileForm';
 
 export const dynamic = 'force-dynamic';
 
-export default async function WeekPage({ params }: { params: { week: string } }) {
-  const week = Number(params.week) || 1;
-  const { season } = currentSeasonAndWeek();
+export default async function ProfilePage() {
   const supabase = createClient();
 
   const {
     data: { user },
   } = await supabase.auth.getUser();
 
-  const [{ data: games }, { data: teams }, { data: myPicks }] = await Promise.all([
-    supabase
-      .from('games')
-      .select('*')
-      .eq('season', season)
-      .eq('week', week)
-      .eq('featured', true)
-      .order('start_date', { ascending: true }),
-    supabase.from('teams').select('*'),
-    user
-      ? supabase.from('picks').select('game_id, picked_team_id').eq('user_id', user.id)
-      : Promise.resolve({ data: [] as { game_id: number; picked_team_id: number }[] }),
-  ]);
-
-  const teamById = new Map<number, Team>((teams ?? []).map((t) => [t.id, t]));
-  const pickByGame = new Map((myPicks ?? []).map((p) => [p.game_id, p.picked_team_id]));
-  const dateRange = formatWeekDateRange((games ?? []).map((g) => g.start_date));
-
-  // Records + last week's results for every team playing this week.
-  const gameTeamIds = Array.from(
-    new Set(
-      (games ?? [])
-        .flatMap((g) => [g.home_team_id, g.away_team_id])
-        .filter((id): id is number => id !== null)
-    )
-  );
-
-  let teamStats = new Map<number, TeamStats>();
-
-  if (gameTeamIds.length > 0) {
-    const idsList = gameTeamIds.join(',');
-    const [{ data: recordGames }, { data: lastWeekGames }] = await Promise.all([
-      supabase
-        .from('games')
-        .select('*')
-        .eq('season', season)
-        .eq('completed', true)
-        .lt('week', week)
-        .or(`home_team_id.in.(${idsList}),away_team_id.in.(${idsList})`),
-      week > 1
-        ? supabase
-            .from('games')
-            .select('*')
-            .eq('season', season)
-            .eq('week', week - 1)
-            .or(`home_team_id.in.(${idsList}),away_team_id.in.(${idsList})`)
-        : Promise.resolve({ data: [] as Game[] }),
-    ]);
-
-    teamStats = buildTeamStats({
-      teamIds: gameTeamIds,
-      week,
-      recordGames: (recordGames ?? []) as Game[],
-      lastWeekGames: (lastWeekGames ?? []) as Game[],
-      teamById,
-    });
+  if (!user) {
+    redirect('/login');
   }
 
+  const { data: profile } = await supabase
+    .from('profiles')
+    .select('display_name, email')
+    .eq('id', user.id)
+    .single();
+
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="font-display text-3xl tracking-wide text-chalk">Week {week}</h1>
-          {dateRange && (
-            <p className="mt-1 font-score text-xs text-muted">{dateRange}</p>
-          )}
-        </div>
-        <div className="flex gap-2 font-score text-sm">
-          <Link
-            href={`/picks/${Math.max(1, week - 1)}`}
-            className="rounded border border-field-line px-3 py-1 text-muted hover:text-chalk"
-          >
-            &larr; Prev
-          </Link>
-          <Link
-            href={`/picks/${week + 1}`}
-            className="rounded border border-field-line px-3 py-1 text-muted hover:text-chalk"
-          >
-            Next &rarr;
-          </Link>
-        </div>
+    <div className="mx-auto max-w-md space-y-6">
+      <div>
+        <h1 className="font-display text-3xl tracking-wide text-chalk">Your Profile</h1>
+        <p className="mt-1 text-sm text-muted">
+          Set the name your friends will see next to your picks.
+        </p>
       </div>
-
-      {!games || games.length === 0 ? (
-        <EmptyState week={week} />
-      ) : (
-        <div className="space-y-4">
-          {(games as Game[]).map((game) => {
-            const home = teamById.get(game.home_team_id ?? -1);
-            const away = teamById.get(game.away_team_id ?? -1);
-            if (!home || !away) return null;
-            return (
-              <GameCard
-                key={game.id}
-                game={game}
-                home={{
-                  team: home,
-                  points: game.home_points,
-                  rank: game.home_rank,
-                  ...teamStats.get(home.id),
-                }}
-                away={{
-                  team: away,
-                  points: game.away_points,
-                  rank: game.away_rank,
-                  ...teamStats.get(away.id),
-                }}
-                myPick={pickByGame.get(game.id) ?? null}
-                locked={new Date(game.start_date) <= new Date()}
-              />
-            );
-          })}
-        </div>
-      )}
-    </div>
-  );
-}
-
-function EmptyState({ week }: { week: number }) {
-  return (
-    <div className="rounded-lg border border-dashed border-field-line px-6 py-12 text-center">
-      <p className="font-display text-xl text-chalk">No games loaded for Week {week} yet</p>
-      <p className="mt-2 text-sm text-muted">
-        Scores sync automatically during the season. If a week just started, give it a few
-        minutes, or trigger a manual sync (see the README).
-      </p>
+      <ProfileForm
+        initialDisplayName={profile?.display_name ?? ''}
+        email={profile?.email ?? user.email ?? ''}
+      />
     </div>
   );
 }
