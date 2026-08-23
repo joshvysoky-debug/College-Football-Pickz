@@ -1,5 +1,4 @@
 import Link from 'next/link';
-import Image from 'next/image';
 import { createClient } from '@/lib/supabase/server';
 import SignOutButton from '@/components/SignOutButton';
 
@@ -12,15 +11,11 @@ export default async function NavBar() {
   return (
     <header className="border-b border-field-line bg-field-panel/60 backdrop-blur">
       <div className="mx-auto flex max-w-4xl flex-col items-center gap-3 px-4 py-5 sm:px-6">
-        <Link href="/" className="flex items-center">
-          <Image
-            src="/logo.png"
-            alt="CFB Game Time"
-            width={1063}
-            height={571}
-            priority
-            className="h-16 w-auto sm:h-20"
-          />
+        <Link
+          href="/"
+          className="text-center font-display text-2xl tracking-wide text-chalk sm:text-3xl"
+        >
+          It&rsquo;s football time in <span className="text-bulb">Tennessee</span>
         </Link>
         {user && (
           <nav className="flex items-center gap-5 text-sm">
