@@ -22,12 +22,14 @@ export default function GameCard({
   away,
   myPick,
   locked,
+  pickedBy,
 }: {
   game: Game;
   home: TeamSide;
   away: TeamSide;
   myPick: number | null;
   locked: boolean;
+  pickedBy?: { home: string[]; away: string[] };
 }) {
   const [pick, setPick] = useState<number | null>(myPick);
   const [pending, startTransition] = useTransition();
@@ -98,6 +100,7 @@ export default function GameCard({
           disabled={locked || pending}
           isFinal={isFinal}
           onChoose={() => choose(away.team.id)}
+          pickedByNames={locked ? pickedBy?.away ?? [] : undefined}
         />
         <div className="h-px bg-field-line" />
         <TeamRow
@@ -108,6 +111,7 @@ export default function GameCard({
           isFinal={isFinal}
           onChoose={() => choose(home.team.id)}
           homeLabel
+          pickedByNames={locked ? pickedBy?.home ?? [] : undefined}
         />
       </div>
       <div className="stub-perf" />
@@ -126,6 +130,7 @@ function TeamRow({
   isFinal,
   onChoose,
   homeLabel,
+  pickedByNames,
 }: {
   side: TeamSide;
   selected: boolean;
@@ -134,6 +139,7 @@ function TeamRow({
   isFinal: boolean;
   onChoose: () => void;
   homeLabel?: boolean;
+  pickedByNames?: string[];
 }) {
   return (
     <button
@@ -175,6 +181,11 @@ function TeamRow({
             )}
           </span>
           {homeLabel && <span className="text-[10px] uppercase tracking-widest text-muted">Home</span>}
+          {pickedByNames && pickedByNames.length > 0 && (
+            <span className="font-score text-[10px] text-muted">
+              Picked by {pickedByNames.join(', ')}
+            </span>
+          )}
         </span>
       </span>
       <span className="flex items-center gap-3">
