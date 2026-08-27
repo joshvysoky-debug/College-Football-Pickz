@@ -1,7 +1,8 @@
 import Link from 'next/link';
 import { createClient } from '@/lib/supabase/server';
 import { currentSeasonAndWeek } from '@/lib/cfbd';
-import { MAX_PLAYOFF_PICKS } from '@/lib/playoffConfig';
+import { MAX_PLAYOFF_PICKS, getPlayoffPicksLockTime } from '@/lib/playoffConfig';
+import { formatGameDateTimeCT } from '@/lib/dateFormat';
 import PlayoffTeamGrid from '@/components/PlayoffTeamGrid';
 import type { Team } from '@/lib/database.types';
 
@@ -15,7 +16,7 @@ export default async function PlayoffPicksPage() {
     data: { user },
   } = await supabase.auth.getUser();
 
-  const [{ data: teams }, { data: allPicks }, { data: profiles }] = await Promise.all([
+  const [{ data: teams }, { data: allPicks }, { data: profiles }, lockTime] = await Promise.all([
     supabase
       .from('teams')
       .select('*')
@@ -24,7 +25,10 @@ export default async function PlayoffPicksPage() {
       .order('school', { ascending: true }),
     supabase.from('playoff_picks').select('user_id, team_id').eq('season', season),
     supabase.from('profiles').select('id, display_name'),
+    getPlayoffPicksLockTime(supabase, season),
   ]);
+
+  const locked = lockTime !== null && new Date() >= lockTime;
 
   const fbsTeams = (teams ?? []) as Team[];
   const picks = allPicks ?? [];
@@ -63,6 +67,15 @@ export default async function PlayoffPicksPage() {
           Pick the {MAX_PLAYOFF_PICKS} teams you think make the College Football Playoff. FBS
           teams only.
         </p>
+        {lockTime && (
+          <p className="mt-1 font-score text-xs text-muted">
+            {locked ? (
+              <span className="text-miss">Locked as of {formatGameDateTimeCT(lockTime.toISOString())}</span>
+            ) : (
+              <>Picks lock at kickoff — {formatGameDateTimeCT(lockTime.toISOString())}</>
+            )}
+          </p>
+        )}
       </div>
 
       <div className="space-y-3">
@@ -101,6 +114,7 @@ export default async function PlayoffPicksPage() {
             groups={groups}
             initialPickedIds={myPickedIds}
             maxPicks={MAX_PLAYOFF_PICKS}
+            locked={locked}
           />
         )}
       </div>
