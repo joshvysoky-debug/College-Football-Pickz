@@ -76,7 +76,7 @@ export async function fetchTeams(year: number): Promise<CfbdTeam[]> {
   // team IDs/classifications can shift year to year (realignment, renamed
   // or relocated programs), and the schedule for `year` may reference a
   // team that isn't in CFBD's undated default list.
-  const res = await fetch(`${CFBD_BASE}/teams?year=${year}`, {
+  const res = await fetch(`${CFBD_BASE}/teams?year=${year}&division=fbs`, {
     headers: authHeaders(),
     next: { revalidate: 60 * 60 * 24 },
   });
