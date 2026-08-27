@@ -16,7 +16,7 @@ export default function SignOutButton() {
       }}
       className="text-muted transition hover:text-bulb-bright"
     >
-      Sign out
+      Sign Out
     </button>
   );
 }
