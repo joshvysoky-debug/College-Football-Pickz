@@ -45,6 +45,14 @@ export type Standing = {
   total_completed: number;
 };
 
+export type PlayoffPick = {
+  id: string;
+  user_id: string;
+  team_id: number;
+  season: number;
+  created_at: string;
+};
+
 export type Database = {
   public: {
     Tables: {
@@ -60,6 +68,12 @@ export type Database = {
         Row: Pick;
         Insert: Omit<Pick, 'id' | 'created_at' | 'updated_at'>;
         Update: Partial<Pick>;
+        Relationships: [];
+      };
+      playoff_picks: {
+        Row: PlayoffPick;
+        Insert: Omit<PlayoffPick, 'id' | 'created_at'>;
+        Update: Partial<PlayoffPick>;
         Relationships: [];
       };
     };
