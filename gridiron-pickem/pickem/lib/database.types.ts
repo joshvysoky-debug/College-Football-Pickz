@@ -3,6 +3,7 @@ export type Team = {
   school: string;
   mascot: string | null;
   conference: string | null;
+  classification: string | null;
   logo_url: string | null;
 };
 
