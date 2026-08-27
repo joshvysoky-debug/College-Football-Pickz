@@ -72,7 +72,7 @@ export async function GET(request: NextRequest) {
       const awayRank = top25.get(g.away_team) ?? null;
       const isRanked = homeRank !== null || awayRank !== null;
       const isSecMatchup =
-        confByTeamId.get(g.home_id) === 'SEC' && confByTeamId.get(g.away_id) === 'SEC';
+        confByTeamId.get(g.home_id) === 'SEC' || confByTeamId.get(g.away_id) === 'SEC';
 
       return {
         id: g.id,
