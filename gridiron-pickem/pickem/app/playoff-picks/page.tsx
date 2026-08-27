@@ -16,12 +16,10 @@ export default async function PlayoffPicksPage() {
   } = await supabase.auth.getUser();
 
   const [{ data: teams }, { data: allPicks }, { data: profiles }] = await Promise.all([
-    // Backfilled FCS/lower-division teams always have a null conference, so
-    // this filter doubles as the FBS-only eligibility check.
     supabase
       .from('teams')
       .select('*')
-      .not('conference', 'is', null)
+      .eq('classification', 'fbs')
       .order('conference', { ascending: true })
       .order('school', { ascending: true }),
     supabase.from('playoff_picks').select('user_id, team_id').eq('season', season),
