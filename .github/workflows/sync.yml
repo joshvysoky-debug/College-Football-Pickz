@@ -1,7 +1,10 @@
 name: Sync CFB scores
 on:
   schedule:
-    - cron: '0 */3 * * *'
+    # Every 3 hours, Sunday-Friday (UTC)
+    - cron: '0 */3 * * 0-5'
+    # Every 10 minutes on Saturday (UTC)
+    - cron: '*/10 * * * 6'
   workflow_dispatch: {}
 jobs:
   sync:
