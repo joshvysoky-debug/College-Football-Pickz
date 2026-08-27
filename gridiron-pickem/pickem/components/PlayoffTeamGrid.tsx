@@ -9,10 +9,12 @@ export default function PlayoffTeamGrid({
   groups,
   initialPickedIds,
   maxPicks,
+  locked,
 }: {
   groups: { conference: string; teams: Team[] }[];
   initialPickedIds: number[];
   maxPicks: number;
+  locked: boolean;
 }) {
   const [pickedIds, setPickedIds] = useState<Set<number>>(new Set(initialPickedIds));
   const [pending, startTransition] = useTransition();
@@ -20,6 +22,7 @@ export default function PlayoffTeamGrid({
   const router = useRouter();
 
   function toggle(teamId: number) {
+    if (locked) return;
     setError(null);
     const wasPicked = pickedIds.has(teamId);
 
@@ -83,12 +86,12 @@ export default function PlayoffTeamGrid({
                 <button
                   key={team.id}
                   onClick={() => toggle(team.id)}
-                  disabled={pending}
+                  disabled={pending || locked}
                   className={`flex items-center gap-2 rounded-lg border px-3 py-2 text-left transition ${
                     selected
                       ? 'border-bulb bg-bulb/15'
                       : 'border-field-line bg-field-panel hover:bg-field-panel2'
-                  } ${pending ? 'opacity-70' : ''}`}
+                  } ${pending || locked ? 'opacity-70' : ''}`}
                 >
                   {team.logo_url && (
                     <Image
