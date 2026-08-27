@@ -17,7 +17,7 @@ export default async function WeekPage({ params }: { params: { week: string } })
     data: { user },
   } = await supabase.auth.getUser();
 
-  const [{ data: games }, { data: teams }, { data: myPicks }] = await Promise.all([
+  const [{ data: games, error: gamesError }, { data: myPicks }] = await Promise.all([
     supabase
       .from('games')
       .select('*')
@@ -25,13 +25,15 @@ export default async function WeekPage({ params }: { params: { week: string } })
       .eq('week', week)
       .eq('featured', true)
       .order('start_date', { ascending: true }),
-    supabase.from('teams').select('*'),
     user
       ? supabase.from('picks').select('game_id, picked_team_id').eq('user_id', user.id)
       : Promise.resolve({ data: [] as { game_id: number; picked_team_id: number }[] }),
   ]);
 
-  const teamById = new Map<number, Team>((teams ?? []).map((t) => [t.id, t]));
+  if (gamesError) {
+    console.error('WeekPage: failed to load games', gamesError);
+  }
+
   const pickByGame = new Map((myPicks ?? []).map((p) => [p.game_id, p.picked_team_id]));
   const dateRange = formatWeekDateRange((games ?? []).map((g) => g.start_date));
 
@@ -44,7 +46,6 @@ export default async function WeekPage({ params }: { params: { week: string } })
     )
   );
 
-  let teamStats = new Map<number, TeamStats>();
   const gameIds = (games ?? []).map((g) => g.id);
 
   const [teamStatsResult, allPicksResult] = await Promise.all([
@@ -76,6 +77,33 @@ export default async function WeekPage({ params }: { params: { week: string } })
       : Promise.resolve({ data: [] as { game_id: number; picked_team_id: number; user_id: string }[] }),
   ]);
 
+  // Teams we need names/logos/records for: everyone playing this week, plus
+  // every opponent that shows up in their prior results (for the "last week"
+  // blurb and season record). Fetching by this explicit id list — instead of
+  // the whole teams table unfiltered — avoids Supabase's default 1000-row
+  // API cap silently truncating results as the teams table grows.
+  const neededTeamIds = Array.from(
+    new Set(
+      [
+        ...gameTeamIds,
+        ...(teamStatsResult.recordGames as Game[]).flatMap((g) => [g.home_team_id, g.away_team_id]),
+        ...(teamStatsResult.lastWeekGames as Game[]).flatMap((g) => [g.home_team_id, g.away_team_id]),
+      ].filter((id): id is number => id !== null)
+    )
+  );
+
+  const { data: teams, error: teamsError } =
+    neededTeamIds.length > 0
+      ? await supabase.from('teams').select('*').in('id', neededTeamIds)
+      : { data: [] as Team[], error: null };
+
+  if (teamsError) {
+    console.error('WeekPage: failed to load teams', teamsError);
+  }
+
+  const teamById = new Map<number, Team>((teams ?? []).map((t) => [t.id, t]));
+
+  let teamStats = new Map<number, TeamStats>();
   if (gameTeamIds.length > 0) {
     teamStats = buildTeamStats({
       teamIds: gameTeamIds,
