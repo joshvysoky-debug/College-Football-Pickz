@@ -36,6 +36,7 @@ export async function GET(request: NextRequest) {
       school: t.school,
       mascot: t.mascot,
       conference: t.conference,
+      classification: t.classification,
       logo_url: t.logos?.[0] ? t.logos[0].replace(/^http:\/\//, 'https://') : null,
     }));
 
@@ -43,20 +44,35 @@ export async function GET(request: NextRequest) {
 
     const games = [...lastWeek, ...thisWeek];
 
-    // CFBD's /teams endpoint only covers that season's FBS roster. Games
-    // against FCS/lower-division opponents (common in early-season "money
-    // games") reference a team id that never shows up there. Without some
-    // row for that id, the pick'em UI has no name to render and has to hide
-    // the whole matchup - so backfill a minimal team row straight from the
-    // game payload, which always carries the opponent's name even when
-    // CFBD's team list doesn't.
+    // CFBD's /teams endpoint (even filtered to division=fbs) only covers
+    // that season's FBS roster. Games against FCS/lower-division opponents
+    // (common in early-season "money games") reference a team id that never
+    // shows up there. Without some row for that id, the pick'em UI has no
+    // name to render and has to hide the whole matchup - so backfill a
+    // minimal team row straight from the game payload, which always carries
+    // the opponent's name (and their real classification) even when CFBD's
+    // team list doesn't include them.
     for (const g of games) {
       if (!knownTeamIds.has(g.home_id)) {
-        teamRows.push({ id: g.home_id, school: g.home_team, mascot: null, conference: null, logo_url: null });
+        teamRows.push({
+          id: g.home_id,
+          school: g.home_team,
+          mascot: null,
+          conference: null,
+          classification: g.home_classification,
+          logo_url: null,
+        });
         knownTeamIds.add(g.home_id);
       }
       if (!knownTeamIds.has(g.away_id)) {
-        teamRows.push({ id: g.away_id, school: g.away_team, mascot: null, conference: null, logo_url: null });
+        teamRows.push({
+          id: g.away_id,
+          school: g.away_team,
+          mascot: null,
+          conference: null,
+          classification: g.away_classification,
+          logo_url: null,
+        });
         knownTeamIds.add(g.away_id);
       }
     }
