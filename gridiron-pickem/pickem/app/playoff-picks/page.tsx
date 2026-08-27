@@ -68,13 +68,17 @@ export default async function PlayoffPicksPage() {
           teams only.
         </p>
         {lockTime && (
-          <p className="mt-1 font-score text-xs text-muted">
-            {locked ? (
-              <span className="text-miss">Locked as of {formatGameDateTimeCT(lockTime.toISOString())}</span>
-            ) : (
-              <>Picks lock at kickoff — {formatGameDateTimeCT(lockTime.toISOString())}</>
-            )}
-          </p>
+          <div
+            className={`mt-3 rounded-lg border px-4 py-2 font-score text-xs font-semibold uppercase tracking-widest ${
+              locked
+                ? 'border-miss/40 bg-miss/10 text-miss'
+                : 'border-bulb/40 bg-bulb/10 text-bulb'
+            }`}
+          >
+            {locked
+              ? `Locked as of ${formatGameDateTimeCT(lockTime.toISOString())}`
+              : `Picks lock at kickoff \u2014 ${formatGameDateTimeCT(lockTime.toISOString())}`}
+          </div>
         )}
       </div>
 
