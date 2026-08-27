@@ -23,19 +23,17 @@ export async function POST(request: Request) {
 
   const { season } = currentSeasonAndWeek();
 
-  // Only FBS teams are eligible. Backfilled FCS/lower-division teams (added
-  // during sync so "money game" opponents still render) always have a null
-  // conference, so this doubles as the FBS/non-FBS check without a new column.
+  // Only FBS teams are eligible.
   const { data: team } = await supabase
     .from('teams')
-    .select('id, conference')
+    .select('id, classification')
     .eq('id', teamId)
     .single();
 
   if (!team) {
     return NextResponse.json({ error: 'team not found' }, { status: 404 });
   }
-  if (!team.conference) {
+  if (team.classification !== 'fbs') {
     return NextResponse.json(
       { error: 'only FBS teams are eligible for playoff picks' },
       { status: 400 }
