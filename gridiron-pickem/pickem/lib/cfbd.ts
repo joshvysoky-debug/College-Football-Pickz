@@ -10,9 +10,11 @@ export type CfbdGame = {
   home_id: number;
   home_team: string;
   home_points: number | null;
+  home_classification: string | null;
   away_id: number;
   away_team: string;
   away_points: number | null;
+  away_classification: string | null;
 };
 
 export type CfbdTeam = {
@@ -20,6 +22,7 @@ export type CfbdTeam = {
   school: string;
   mascot: string | null;
   conference: string | null;
+  classification: string | null;
   logos: string[] | null;
 };
 
@@ -65,9 +68,11 @@ export async function fetchGames(opts: {
     home_id: (g.homeId ?? g.home_id) as number,
     home_team: (g.homeTeam ?? g.home_team) as string,
     home_points: (g.homePoints ?? g.home_points) as number | null,
+    home_classification: (g.homeClassification ?? g.home_classification ?? null) as string | null,
     away_id: (g.awayId ?? g.away_id) as number,
     away_team: (g.awayTeam ?? g.away_team) as string,
     away_points: (g.awayPoints ?? g.away_points) as number | null,
+    away_classification: (g.awayClassification ?? g.away_classification ?? null) as string | null,
   }));
 }
 
@@ -91,6 +96,7 @@ export async function fetchTeams(year: number): Promise<CfbdTeam[]> {
     school: t.school as string,
     mascot: (t.mascot ?? null) as string | null,
     conference: (t.conference ?? null) as string | null,
+    classification: (t.classification ?? null) as string | null,
     logos: (t.logos ?? null) as string[] | null,
   }));
 }
