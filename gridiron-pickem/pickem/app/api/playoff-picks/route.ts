@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { currentSeasonAndWeek } from '@/lib/cfbd';
-import { MAX_PLAYOFF_PICKS } from '@/lib/playoffConfig';
+import { MAX_PLAYOFF_PICKS, getPlayoffPicksLockTime } from '@/lib/playoffConfig';
 
 export async function POST(request: Request) {
   const supabase = createClient();
@@ -22,6 +22,12 @@ export async function POST(request: Request) {
   }
 
   const { season } = currentSeasonAndWeek();
+
+  // RLS also enforces the kickoff lock; this just gives a clean error message.
+  const lockTime = await getPlayoffPicksLockTime(supabase, season);
+  if (lockTime && new Date() >= lockTime) {
+    return NextResponse.json({ error: 'playoff picks are locked' }, { status: 403 });
+  }
 
   // Only FBS teams are eligible.
   const { data: team } = await supabase
@@ -83,6 +89,12 @@ export async function DELETE(request: Request) {
   }
 
   const { season } = currentSeasonAndWeek();
+
+  // RLS also enforces the kickoff lock; this just gives a clean error message.
+  const lockTime = await getPlayoffPicksLockTime(supabase, season);
+  if (lockTime && new Date() >= lockTime) {
+    return NextResponse.json({ error: 'playoff picks are locked' }, { status: 403 });
+  }
 
   const { error } = await supabase
     .from('playoff_picks')
