@@ -182,7 +182,15 @@ function TeamRow({
           </span>
           {homeLabel && <span className="text-[10px] uppercase tracking-widest text-muted">Home</span>}
           {pickedByNames && pickedByNames.length > 0 && (
-            <span className="font-score text-[10px] text-muted">
+            <span
+              className={`inline-flex w-fit items-center rounded-full border px-2 py-0.5 font-score text-[10px] font-semibold uppercase tracking-widest ${
+                isFinal
+                  ? winner
+                    ? 'border-turf-bright/40 bg-turf-bright/10 text-turf-bright'
+                    : 'border-miss/40 bg-miss/10 text-miss'
+                  : 'border-bulb/40 bg-bulb/10 text-bulb'
+              }`}
+            >
               Picked by {pickedByNames.join(', ')}
             </span>
           )}
