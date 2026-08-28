@@ -5,6 +5,7 @@ import Image from 'next/image';
 import { useRouter } from 'next/navigation';
 import Countdown from '@/components/Countdown';
 import { formatGameDateTimeCT } from '@/lib/dateFormat';
+import { potentialPickPoints } from '@/lib/scoring';
 import type { LastWeekResult } from '@/lib/teamStats';
 import type { Game, Team } from '@/lib/database.types';
 
@@ -23,6 +24,7 @@ export default function GameCard({
   myPick,
   locked,
   pickedBy,
+  potentialUpset,
 }: {
   game: Game;
   home: TeamSide;
@@ -30,6 +32,7 @@ export default function GameCard({
   myPick: number | null;
   locked: boolean;
   pickedBy?: { home: string[]; away: string[] };
+  potentialUpset?: boolean;
 }) {
   const [pick, setPick] = useState<number | null>(myPick);
   const [pending, startTransition] = useTransition();
@@ -77,8 +80,21 @@ export default function GameCard({
 
   const isFinal = game.completed;
 
+  const { homePoints, awayPoints } = potentialPickPoints({
+    homeRank: game.home_sp_rank,
+    awayRank: game.away_sp_rank,
+    neutralSite: game.neutral_site,
+  });
+
   return (
     <div className="stub-notch flex overflow-hidden rounded-lg border border-field-line bg-field-panel">
+      {potentialUpset && (
+        <div className="flex w-6 shrink-0 items-center justify-center border-r border-miss/40 bg-miss/15">
+          <span className="[writing-mode:vertical-rl] rotate-180 whitespace-nowrap font-score text-[9px] font-bold uppercase tracking-widest text-miss">
+            Upset Alert
+          </span>
+        </div>
+      )}
       <div className="flex flex-1 flex-col gap-3 p-5">
         <div className="flex items-center justify-between">
           <span className="font-score text-xs tabular text-muted">
@@ -115,8 +131,15 @@ export default function GameCard({
         />
       </div>
       <div className="stub-perf" />
-      <div className="flex w-16 shrink-0 items-center justify-center bg-field-panel2 font-display text-lg text-muted">
-        {game.week}
+      <div className="flex w-16 shrink-0 flex-col bg-field-panel2">
+        <div className="flex flex-1 flex-col items-center justify-center gap-0.5 border-b border-field-line/60">
+          <span className="font-display text-lg leading-none text-muted">{awayPoints}</span>
+          <span className="font-score text-[9px] uppercase tracking-widest text-muted/70">pts</span>
+        </div>
+        <div className="flex flex-1 flex-col items-center justify-center gap-0.5">
+          <span className="font-display text-lg leading-none text-muted">{homePoints}</span>
+          <span className="font-score text-[9px] uppercase tracking-widest text-muted/70">pts</span>
+        </div>
       </div>
     </div>
   );
