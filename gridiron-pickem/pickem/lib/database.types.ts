@@ -28,6 +28,9 @@ export type Game = {
   /** Full-FBS-field SP+ rank, used for Article III's upset test. */
   home_sp_rank: number | null;
   away_sp_rank: number | null;
+  /** 'fbs' / 'fcs' / etc. — used to force FBS-vs-FCS games to count as upsets. */
+  home_classification: string | null;
+  away_classification: string | null;
 };
 
 export type Profile = {
