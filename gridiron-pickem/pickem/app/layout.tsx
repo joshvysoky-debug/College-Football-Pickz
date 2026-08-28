@@ -1,7 +1,8 @@
-import type { Metadata } from 'next';
+import type { Metadata, Viewport } from 'next';
 import { Bebas_Neue, Inter, Space_Mono } from 'next/font/google';
 import './globals.css';
 import NavBar from '@/components/NavBar';
+import RegisterSW from '@/components/RegisterSW';
 
 // Note: next/font/google fetches these once at build time and self-hosts the
 // result — no runtime calls to Google, no layout shift. It needs outbound
@@ -27,6 +28,25 @@ const score = Space_Mono({
 export const metadata: Metadata = {
   title: 'Gridiron Pick\u2019em',
   description: 'The weekly college football pick\u2019em pool.',
+  manifest: '/manifest.webmanifest',
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: 'black-translucent',
+    title: 'CFB Game Time',
+  },
+  icons: {
+    icon: [
+      { url: '/icon-192.png', sizes: '192x192', type: 'image/png' },
+      { url: '/icon-512.png', sizes: '512x512', type: 'image/png' },
+    ],
+    apple: [{ url: '/apple-touch-icon.png', sizes: '180x180', type: 'image/png' }],
+  },
+};
+
+export const viewport: Viewport = {
+  width: 'device-width',
+  initialScale: 1,
+  themeColor: '#08090B',
 };
 
 export default function RootLayout({
@@ -37,6 +57,7 @@ export default function RootLayout({
   return (
     <html lang="en" className={`${display.variable} ${body.variable} ${score.variable}`}>
       <body className="font-body min-h-screen">
+        <RegisterSW />
         <NavBar />
         <main className="mx-auto max-w-4xl px-4 pb-24 pt-6 sm:px-6">{children}</main>
       </body>
