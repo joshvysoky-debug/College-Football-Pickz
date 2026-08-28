@@ -1,21 +1,27 @@
 import type { Game } from '@/lib/database.types';
+import { scorePick } from '@/lib/scoring';
 
 export type PickRow = { game_id: number; picked_team_id: number; user_id: string };
 
 export type PlayerSeries = {
   userId: string;
   name: string;
-  points: number[]; // cumulative correct picks, aligned index-for-index with `weeks`
+  points: number[]; // cumulative Article III points, aligned index-for-index with `weeks`
 };
 
 /**
- * Builds each player's cumulative correct-pick total by week, for the
- * season points chart on the Standings page.
+ * Builds each player's cumulative Article III weekly-scoring point total by
+ * week, for the season points chart on the Standings page.
+ *
+ * This intentionally charts weekly game-pick points only, not the Article V
+ * playoff-prediction bonus — that bonus resolves all at once at the end of
+ * the season rather than week by week, so it's shown as part of the season
+ * total in the standings table instead of as a step in this chart.
  *
  * - `games` should be every *completed* game this season (any week).
  * - `picks` should cover all picks made on those games.
  * - `nameById` is the full set of players to plot, even ones with zero
- *   correct picks so far (they still get a flat line at 0).
+ *   points so far (they still get a flat line at 0).
  */
 export function buildSeasonProgress({
   games,
@@ -26,27 +32,27 @@ export function buildSeasonProgress({
   picks: PickRow[];
   nameById: Map<string, string>;
 }): { weeks: number[]; series: PlayerSeries[] } {
-  const weekByGameId = new Map(games.map((g) => [g.id, g.week]));
-  const winnerByGameId = new Map(games.map((g) => [g.id, g.winner_team_id]));
+  const gameById = new Map(games.map((g) => [g.id, g]));
 
   const weeks = Array.from(new Set(games.map((g) => g.week))).sort((a, b) => a - b);
 
-  // userId -> week -> correct picks made that week
-  const weeklyCorrect = new Map<string, Map<number, number>>();
+  // userId -> week -> points earned that week
+  const weeklyPoints = new Map<string, Map<number, number>>();
 
   for (const p of picks) {
-    const week = weekByGameId.get(p.game_id);
-    const winner = winnerByGameId.get(p.game_id);
-    if (week === undefined || winner === null || winner === undefined) continue;
-    if (p.picked_team_id !== winner) continue;
+    const game = gameById.get(p.game_id);
+    if (!game) continue;
 
-    const userWeeks = weeklyCorrect.get(p.user_id) ?? new Map<number, number>();
-    userWeeks.set(week, (userWeeks.get(week) ?? 0) + 1);
-    weeklyCorrect.set(p.user_id, userWeeks);
+    const result = scorePick({ game, pickedTeamId: p.picked_team_id });
+    if (!result || result.points === 0) continue;
+
+    const userWeeks = weeklyPoints.get(p.user_id) ?? new Map<number, number>();
+    userWeeks.set(game.week, (userWeeks.get(game.week) ?? 0) + result.points);
+    weeklyPoints.set(p.user_id, userWeeks);
   }
 
   const series: PlayerSeries[] = Array.from(nameById.entries()).map(([userId, name]) => {
-    const userWeeks = weeklyCorrect.get(userId) ?? new Map<number, number>();
+    const userWeeks = weeklyPoints.get(userId) ?? new Map<number, number>();
     let running = 0;
     const points = weeks.map((w) => {
       running += userWeeks.get(w) ?? 0;
