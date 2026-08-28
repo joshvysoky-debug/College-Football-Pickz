@@ -124,6 +124,11 @@ export async function GET(request: NextRequest) {
         // Top 25 (e.g. two unranked SEC teams playing each other).
         home_sp_rank: spRanks.get(g.home_team) ?? null,
         away_sp_rank: spRanks.get(g.away_team) ?? null,
+        // FCS opponents never get an SP+ rank, so classification is stored
+        // separately to let lib/scoring.ts force FBS-vs-FCS games to count
+        // as upsets regardless of (missing) rank data.
+        home_classification: g.home_classification,
+        away_classification: g.away_classification,
       };
     });
 
