@@ -21,11 +21,13 @@ import type { Game } from '@/lib/database.types';
  * AP poll only covers 25 teams and the bylaws' upset rule needs to apply
  * even when both teams are unranked there.
  *
- * FCS opponents are a special case: SP+ only rates FBS teams, so an FCS
- * team never has a numeric rank to compare. Rather than silently treating
- * that as "not an upset" for lack of data, any FBS-vs-FCS game is always
- * treated as upset-eligible — an FCS team beating an FBS team counts as an
- * upset regardless of what the (nonexistent) rank gap would say.
+ * Non-FBS opponents are a special case: SP+ only rates FBS teams, so an
+ * FCS/Division II/Division III team never has a numeric rank to compare.
+ * Rather than silently treating that as "not an upset" for lack of data,
+ * any FBS-vs-non-FBS game is always treated as upset-eligible — a non-FBS
+ * team beating an FBS team counts as an upset regardless of what the
+ * (nonexistent) rank gap would say. This covers FCS, Division II ('ii'),
+ * and Division III ('iii') opponents alike, not just FCS specifically.
  */
 
 export type PickOutcome =
@@ -49,21 +51,27 @@ export const OUTCOME_POINTS: Record<PickOutcome, number> = {
 
 export const PLAYOFF_TEAM_POINTS = 10;
 
-/** True when the two classifications are an FBS/FCS pairing (order doesn't matter). */
-export function isFcsMismatch(
+/**
+ * True when exactly one side is FBS and the other is a known non-FBS
+ * classification (FCS, Division II, Division III, etc.) — order doesn't
+ * matter. Returns false if either classification is missing/unknown, since
+ * there's nothing to compare.
+ */
+export function isSubdivisionMismatch(
   classificationA: string | null | undefined,
   classificationB: string | null | undefined
 ): boolean {
-  return (
-    (classificationA === 'fcs' && classificationB === 'fbs') ||
-    (classificationA === 'fbs' && classificationB === 'fcs')
-  );
+  if (!classificationA || !classificationB) return false;
+  const aIsFbs = classificationA === 'fbs';
+  const bIsFbs = classificationB === 'fbs';
+  return aIsFbs !== bIsFbs;
 }
 
 /**
  * True when the winning team qualifies as an upset over the team it beat —
  * either because it was ranked at least 20 spots lower, or because it was
- * the FCS side in an FBS-vs-FCS game (which has no rank data to compare).
+ * the non-FBS side in an FBS-vs-non-FBS game (which has no rank data to
+ * compare).
  */
 export function isUpset({
   winnerRank,
@@ -76,17 +84,22 @@ export function isUpset({
   winnerClassification?: string | null;
   loserClassification?: string | null;
 }): boolean {
-  if (winnerClassification === 'fcs' && loserClassification === 'fbs') return true;
+  if (
+    isSubdivisionMismatch(winnerClassification, loserClassification) &&
+    winnerClassification !== 'fbs'
+  ) {
+    return true;
+  }
   if (winnerRank === null || loserRank === null) return false;
   return winnerRank - loserRank >= 20;
 }
 
 /**
  * True when a game's two teams are far enough apart (20+ SP+ spots, or an
- * FBS-vs-FCS pairing) that a win by the worse-ranked side would qualify as
- * an Article III upset. Unlike `isUpset`, this doesn't need to know who
- * won — it's meant for flagging a game as upset-worthy before or during
- * play, not for scoring a completed pick.
+ * FBS-vs-non-FBS pairing) that a win by the worse-ranked side would
+ * qualify as an Article III upset. Unlike `isUpset`, this doesn't need to
+ * know who won — it's meant for flagging a game as upset-worthy before or
+ * during play, not for scoring a completed pick.
  */
 export function isPotentialUpset({
   homeRank,
@@ -99,7 +112,7 @@ export function isPotentialUpset({
   homeClassification?: string | null;
   awayClassification?: string | null;
 }): boolean {
-  if (isFcsMismatch(homeClassification, awayClassification)) return true;
+  if (isSubdivisionMismatch(homeClassification, awayClassification)) return true;
   if (homeRank === null || awayRank === null) return false;
   return Math.abs(homeRank - awayRank) >= 20;
 }
@@ -112,11 +125,11 @@ export function isPotentialUpset({
  * opposed to `scorePick` which grades a specific pick against a finished
  * game.
  *
- * When the teams aren't 20+ ranks apart (and it's not an FBS-vs-FCS game),
- * a correct pick is just a plain Win (2) either way. Otherwise, the
- * worse-ranked (or FCS) side is the "underdog" — picking them correctly is
- * the upset bonus (4 home / 6 away / 4 neutral), while picking the
- * favorite correctly stays a plain Win (2).
+ * When the teams aren't 20+ ranks apart (and it's not an FBS-vs-non-FBS
+ * game), a correct pick is just a plain Win (2) either way. Otherwise, the
+ * worse-ranked (or non-FBS) side is the "underdog" — picking them
+ * correctly is the upset bonus (4 home / 6 away / 4 neutral), while
+ * picking the favorite correctly stays a plain Win (2).
  */
 export function potentialPickPoints({
   homeRank,
@@ -131,17 +144,17 @@ export function potentialPickPoints({
   homeClassification?: string | null;
   awayClassification?: string | null;
 }): { homePoints: number; awayPoints: number } {
-  const fcsMismatch = isFcsMismatch(homeClassification, awayClassification);
+  const subdivisionMismatch = isSubdivisionMismatch(homeClassification, awayClassification);
 
-  if (!fcsMismatch && !isPotentialUpset({ homeRank, awayRank })) {
+  if (!subdivisionMismatch && !isPotentialUpset({ homeRank, awayRank })) {
     return { homePoints: OUTCOME_POINTS.win, awayPoints: OUTCOME_POINTS.win };
   }
 
-  // If it's an FBS-vs-FCS game, the FCS side is always the underdog —
-  // otherwise fall back to whichever side is ranked worse (isPotentialUpset
-  // already confirmed both ranks are non-null in that case).
-  const homeIsUnderdog = fcsMismatch
-    ? homeClassification === 'fcs'
+  // If it's an FBS-vs-non-FBS game, the non-FBS side is always the
+  // underdog — otherwise fall back to whichever side is ranked worse
+  // (isPotentialUpset already confirmed both ranks are non-null in that case).
+  const homeIsUnderdog = subdivisionMismatch
+    ? homeClassification !== 'fbs'
     : (homeRank as number) > (awayRank as number);
 
   if (neutralSite) {
