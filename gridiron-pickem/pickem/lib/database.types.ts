@@ -20,8 +20,14 @@ export type Game = {
   completed: boolean;
   winner_team_id: number | null;
   featured: boolean;
+  /** AP Top 25 rank, used only to drive the "featured game" filter. */
   home_rank: number | null;
   away_rank: number | null;
+  neutral_site: boolean;
+  overtime: boolean;
+  /** Full-FBS-field SP+ rank, used for Article III's upset test. */
+  home_sp_rank: number | null;
+  away_sp_rank: number | null;
 };
 
 export type Profile = {
@@ -54,6 +60,12 @@ export type PlayoffPick = {
   created_at: string;
 };
 
+/** The actual College Football Playoff field for a season (Article V grading). */
+export type PlayoffFieldEntry = {
+  season: number;
+  team_id: number;
+};
+
 export type Database = {
   public: {
     Tables: {
@@ -75,6 +87,12 @@ export type Database = {
         Row: PlayoffPick;
         Insert: Omit<PlayoffPick, 'id' | 'created_at'>;
         Update: Partial<PlayoffPick>;
+        Relationships: [];
+      };
+      playoff_field: {
+        Row: PlayoffFieldEntry;
+        Insert: PlayoffFieldEntry;
+        Update: Partial<PlayoffFieldEntry>;
         Relationships: [];
       };
     };
