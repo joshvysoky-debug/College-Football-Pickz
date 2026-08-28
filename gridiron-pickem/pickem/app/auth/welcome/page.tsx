@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Image from 'next/image';
+import Link from 'next/link';
 
 export default function AuthWelcomePage() {
   const router = useRouter();
@@ -56,12 +57,12 @@ export default function AuthWelcomePage() {
           from your Home Screen icon and you&rsquo;ll already be signed in.
         </p>
 
-        
+        <Link
           href="/"
           className="mt-6 inline-block w-full rounded bg-bulb px-3 py-2 font-semibold text-field-night transition hover:bg-bulb-dim"
         >
           Or continue here in Safari
-        </a>
+        </Link>
       </div>
     </div>
   );
