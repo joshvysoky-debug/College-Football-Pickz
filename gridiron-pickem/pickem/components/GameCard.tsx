@@ -84,6 +84,8 @@ export default function GameCard({
     homeRank: game.home_sp_rank,
     awayRank: game.away_sp_rank,
     neutralSite: game.neutral_site,
+    homeClassification: game.home_classification,
+    awayClassification: game.away_classification,
   });
 
   return (
@@ -132,13 +134,41 @@ export default function GameCard({
       </div>
       <div className="stub-perf" />
       <div className="flex w-16 shrink-0 flex-col bg-field-panel2">
-        <div className="flex flex-1 flex-col items-center justify-center gap-0.5 border-b border-field-line/60">
-          <span className="font-display text-lg leading-none text-muted">{awayPoints}</span>
-          <span className="font-score text-[9px] uppercase tracking-widest text-muted/70">pts</span>
+        <div
+          className={`flex flex-1 flex-col items-center justify-center gap-0.5 border-b border-field-line/60 transition ${
+            pick === away.team.id ? 'bg-bulb/15' : ''
+          }`}
+        >
+          <span
+            className={`font-display text-lg leading-none ${pick === away.team.id ? 'text-bulb' : 'text-muted'}`}
+          >
+            {awayPoints}
+          </span>
+          <span
+            className={`font-score text-[9px] uppercase tracking-widest ${
+              pick === away.team.id ? 'text-bulb/70' : 'text-muted/70'
+            }`}
+          >
+            pts
+          </span>
         </div>
-        <div className="flex flex-1 flex-col items-center justify-center gap-0.5">
-          <span className="font-display text-lg leading-none text-muted">{homePoints}</span>
-          <span className="font-score text-[9px] uppercase tracking-widest text-muted/70">pts</span>
+        <div
+          className={`flex flex-1 flex-col items-center justify-center gap-0.5 transition ${
+            pick === home.team.id ? 'bg-bulb/15' : ''
+          }`}
+        >
+          <span
+            className={`font-display text-lg leading-none ${pick === home.team.id ? 'text-bulb' : 'text-muted'}`}
+          >
+            {homePoints}
+          </span>
+          <span
+            className={`font-score text-[9px] uppercase tracking-widest ${
+              pick === home.team.id ? 'text-bulb/70' : 'text-muted/70'
+            }`}
+          >
+            pts
+          </span>
         </div>
       </div>
     </div>
