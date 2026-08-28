@@ -134,36 +134,32 @@ export default function GameCard({
       </div>
       <div className="stub-perf" />
       <div className="flex w-16 shrink-0 flex-col bg-field-panel2">
-        <div
-          className={`flex flex-1 flex-col items-center justify-center gap-0.5 border-b border-field-line/60 transition ${
-            pick === away.team.id ? 'bg-bulb/15' : ''
-          }`}
-        >
+        <div className="flex flex-1 flex-col items-center justify-center gap-0.5 border-b border-field-line/60">
           <span
-            className={`font-display text-lg leading-none ${pick === away.team.id ? 'text-bulb' : 'text-muted'}`}
+            className={`font-display text-lg leading-none transition ${
+              pick === away.team.id ? 'text-bulb' : 'text-muted'
+            }`}
           >
             {awayPoints}
           </span>
           <span
-            className={`font-score text-[9px] uppercase tracking-widest ${
+            className={`font-score text-[9px] uppercase tracking-widest transition ${
               pick === away.team.id ? 'text-bulb/70' : 'text-muted/70'
             }`}
           >
             pts
           </span>
         </div>
-        <div
-          className={`flex flex-1 flex-col items-center justify-center gap-0.5 transition ${
-            pick === home.team.id ? 'bg-bulb/15' : ''
-          }`}
-        >
+        <div className="flex flex-1 flex-col items-center justify-center gap-0.5">
           <span
-            className={`font-display text-lg leading-none ${pick === home.team.id ? 'text-bulb' : 'text-muted'}`}
+            className={`font-display text-lg leading-none transition ${
+              pick === home.team.id ? 'text-bulb' : 'text-muted'
+            }`}
           >
             {homePoints}
           </span>
           <span
-            className={`font-score text-[9px] uppercase tracking-widest ${
+            className={`font-score text-[9px] uppercase tracking-widest transition ${
               pick === home.team.id ? 'text-bulb/70' : 'text-muted/70'
             }`}
           >
