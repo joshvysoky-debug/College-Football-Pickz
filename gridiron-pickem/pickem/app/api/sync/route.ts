@@ -1,6 +1,13 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import { createServiceClient } from '@/lib/supabase/server';
-import { fetchGames, fetchTeams, fetchTop25, currentSeasonAndWeek } from '@/lib/cfbd';
+import {
+  fetchGames,
+  fetchTeams,
+  fetchTop25,
+  fetchSpRanks,
+  fetchActualPlayoffField,
+  currentSeasonAndWeek,
+} from '@/lib/cfbd';
 
 export const dynamic = 'force-dynamic';
 
@@ -24,11 +31,12 @@ export async function GET(request: NextRequest) {
   const { season, week } = currentSeasonAndWeek();
 
   try {
-    const [teams, thisWeek, lastWeek, top25] = await Promise.all([
+    const [teams, thisWeek, lastWeek, top25, spRanks] = await Promise.all([
       fetchTeams(season),
       fetchGames({ year: season, week }),
       week > 1 ? fetchGames({ year: season, week: week - 1 }) : Promise.resolve([]),
       fetchTop25({ year: season, week }),
+      fetchSpRanks(season),
     ]);
 
     const teamRows = teams.map((t) => ({
@@ -109,12 +117,37 @@ export async function GET(request: NextRequest) {
         featured: isRanked || isSecMatchup,
         home_rank: homeRank,
         away_rank: awayRank,
+        neutral_site: g.neutral_site,
+        overtime: g.overtime,
+        // Full-field SP+ rank, used to test the bylaws' "ranked at least 20
+        // spots higher" upset rule even when neither team is in the AP
+        // Top 25 (e.g. two unranked SEC teams playing each other).
+        home_sp_rank: spRanks.get(g.home_team) ?? null,
+        away_sp_rank: spRanks.get(g.away_team) ?? null,
       };
     });
 
     if (gameRows.length > 0) {
       const { error } = await supabase.from('games').upsert(gameRows);
       if (error) throw error;
+    }
+
+    // Best-effort: once the CFP bracket is announced, this recovers the
+    // real 12-team field so playoff picks can be graded (Article V). Before
+    // the bracket exists this just returns an empty list, which is a no-op
+    // here rather than something worth failing the whole sync over.
+    let playoffFieldSynced = 0;
+    try {
+      const fieldTeamIds = await fetchActualPlayoffField(season);
+      if (fieldTeamIds.length > 0) {
+        const { error } = await supabase
+          .from('playoff_field')
+          .upsert(fieldTeamIds.map((team_id) => ({ season, team_id })));
+        if (error) throw error;
+        playoffFieldSynced = fieldTeamIds.length;
+      }
+    } catch (err) {
+      console.error('playoff field sync failed (non-fatal)', err);
     }
 
     return NextResponse.json({
@@ -124,6 +157,8 @@ export async function GET(request: NextRequest) {
       teamsSynced: teamRows.length,
       gamesSynced: gameRows.length,
       rankedSchoolsFound: top25.size,
+      spRanksFound: spRanks.size,
+      playoffFieldSynced,
     });
   } catch (err) {
     console.error('sync failed', err);
