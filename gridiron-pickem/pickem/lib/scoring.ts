@@ -50,6 +50,57 @@ export function isUpset(winnerRank: number | null, loserRank: number | null): bo
 }
 
 /**
+ * True when a game's two teams are far enough apart in SP+ rank (20+ spots)
+ * that a win by the worse-ranked side would qualify as an Article III upset.
+ * Unlike `isUpset`, this doesn't need to know who won — it's meant for
+ * flagging a game as upset-worthy before or during play, not for scoring a
+ * completed pick.
+ */
+export function isPotentialUpset(homeRank: number | null, awayRank: number | null): boolean {
+  if (homeRank === null || awayRank === null) return false;
+  return Math.abs(homeRank - awayRank) >= 20;
+}
+
+/**
+ * How many points a correct pick on the home team vs. the away team would
+ * be worth, based only on the two teams' SP+ ranks and whether the game is
+ * neutral-site — no result needed. Used to show "what a correct guess is
+ * worth" on the picks page before/during a game, as opposed to `scorePick`
+ * which grades a specific pick against a finished game.
+ *
+ * When the teams aren't 20+ ranks apart, a correct pick is just a plain
+ * Win (2) either way. When they are, the worse-ranked side is the
+ * "underdog" — picking them correctly is the upset bonus (4 home / 6 away /
+ * 4 neutral), while picking the favorite correctly stays a plain Win (2).
+ */
+export function potentialPickPoints({
+  homeRank,
+  awayRank,
+  neutralSite,
+}: {
+  homeRank: number | null;
+  awayRank: number | null;
+  neutralSite: boolean;
+}): { homePoints: number; awayPoints: number } {
+  if (!isPotentialUpset(homeRank, awayRank)) {
+    return { homePoints: OUTCOME_POINTS.win, awayPoints: OUTCOME_POINTS.win };
+  }
+
+  // isPotentialUpset already confirmed both ranks are non-null.
+  const homeIsUnderdog = (homeRank as number) > (awayRank as number);
+
+  if (neutralSite) {
+    return homeIsUnderdog
+      ? { homePoints: OUTCOME_POINTS.neutral_upset_win, awayPoints: OUTCOME_POINTS.win }
+      : { homePoints: OUTCOME_POINTS.win, awayPoints: OUTCOME_POINTS.neutral_upset_win };
+  }
+
+  return homeIsUnderdog
+    ? { homePoints: OUTCOME_POINTS.home_upset_win, awayPoints: OUTCOME_POINTS.win }
+    : { homePoints: OUTCOME_POINTS.win, awayPoints: OUTCOME_POINTS.away_upset_win };
+}
+
+/**
  * Scores a single pick against its (completed) game.
  * Returns `null` if the game hasn't finished yet — there's nothing to score.
  */
