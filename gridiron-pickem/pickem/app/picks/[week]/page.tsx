@@ -192,7 +192,13 @@ export default async function WeekPage({ params }: { params: { week: string } })
                   home: (pickersByGameAndTeam.get(`${game.id}:${home.id}`) ?? []).sort(),
                   away: (pickersByGameAndTeam.get(`${game.id}:${away.id}`) ?? []).sort(),
                 }}
-                potentialUpset={isPotentialUpset(game.home_sp_rank, game.away_sp_rank)}
+                potentialUpset={isPotentialUpset({
+                  homeRank: game.home_sp_rank,
+                  awayRank: game.away_sp_rank,
+                  homeClassification: game.home_classification,
+                  awayClassification: game.away_classification,
+                })}
+              />
               />
             );
           })}
