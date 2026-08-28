@@ -4,6 +4,7 @@ import GameCard from '@/components/GameCard';
 import { currentSeasonAndWeek } from '@/lib/cfbd';
 import { formatWeekDateRange } from '@/lib/dateFormat';
 import { buildTeamStats, type TeamStats } from '@/lib/teamStats';
+import { isPotentialUpset } from '@/lib/scoring';
 import type { Game, Team } from '@/lib/database.types';
 
 export const dynamic = 'force-dynamic';
@@ -191,6 +192,7 @@ export default async function WeekPage({ params }: { params: { week: string } })
                   home: (pickersByGameAndTeam.get(`${game.id}:${home.id}`) ?? []).sort(),
                   away: (pickersByGameAndTeam.get(`${game.id}:${away.id}`) ?? []).sort(),
                 }}
+                potentialUpset={isPotentialUpset(game.home_sp_rank, game.away_sp_rank)}
               />
             );
           })}
