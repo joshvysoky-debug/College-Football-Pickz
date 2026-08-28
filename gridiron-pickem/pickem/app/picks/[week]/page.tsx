@@ -199,7 +199,6 @@ export default async function WeekPage({ params }: { params: { week: string } })
                   awayClassification: game.away_classification,
                 })}
               />
-              />
             );
           })}
         </div>
