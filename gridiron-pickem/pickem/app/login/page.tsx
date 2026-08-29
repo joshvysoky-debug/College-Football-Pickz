@@ -5,6 +5,22 @@ import Image from 'next/image';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
 
+const AUTH_REQUEST_TIMEOUT_MS = 10000;
+
+// Supabase's auth calls have no timeout of their own — if the endpoint (or
+// the SMTP send behind signInWithOtp) is slow, the promise just never
+// resolves and the button hangs on "Sending..." forever with no way out.
+// This races the real call against a timer so the UI always recovers with
+// a clear, retryable error instead of hanging indefinitely.
+function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
+  return Promise.race([
+    promise,
+    new Promise<T>((_, reject) =>
+      setTimeout(() => reject(new Error('Request timed out. Please try again.')), ms)
+    ),
+  ]);
+}
+
 export default function LoginPage() {
   const router = useRouter();
   const [email, setEmail] = useState('');
@@ -17,23 +33,31 @@ export default function LoginPage() {
     e.preventDefault();
     setStatus('loading');
     const supabase = createClient();
-    const { error } = await supabase.auth.signInWithOtp({
-      email,
-      options: {
-        // Keep this so the link still works fine for anyone using the site
-        // in a plain Safari tab (no Home Screen install). Folks using the
-        // installed app should use the 6-digit code below instead, since
-        // iOS keeps the installed app's storage separate from Safari's —
-        // a link opened from Mail can never sign in the installed app.
-        emailRedirectTo: `${window.location.origin}/auth/callback`,
-      },
-    });
-    if (error) {
-      setErrorMsg(error.message);
+    try {
+      const { error } = await withTimeout(
+        supabase.auth.signInWithOtp({
+          email,
+          options: {
+            // Keep this so the link still works fine for anyone using the site
+            // in a plain Safari tab (no Home Screen install). Folks using the
+            // installed app should use the 6-digit code below instead, since
+            // iOS keeps the installed app's storage separate from Safari's —
+            // a link opened from Mail can never sign in the installed app.
+            emailRedirectTo: `${window.location.origin}/auth/callback`,
+          },
+        }),
+        AUTH_REQUEST_TIMEOUT_MS
+      );
+      if (error) {
+        setErrorMsg(error.message);
+        setStatus('error');
+      } else {
+        setStatus('idle');
+        setStep('code');
+      }
+    } catch (err) {
+      setErrorMsg(err instanceof Error ? err.message : 'Something went wrong. Please try again.');
       setStatus('error');
-    } else {
-      setStatus('idle');
-      setStep('code');
     }
   }
 
@@ -41,17 +65,25 @@ export default function LoginPage() {
     e.preventDefault();
     setStatus('loading');
     const supabase = createClient();
-    const { error } = await supabase.auth.verifyOtp({
-      email,
-      token: code,
-      type: 'email',
-    });
-    if (error) {
-      setErrorMsg(error.message);
+    try {
+      const { error } = await withTimeout(
+        supabase.auth.verifyOtp({
+          email,
+          token: code,
+          type: 'email',
+        }),
+        AUTH_REQUEST_TIMEOUT_MS
+      );
+      if (error) {
+        setErrorMsg(error.message);
+        setStatus('error');
+      } else {
+        router.replace('/');
+        router.refresh();
+      }
+    } catch (err) {
+      setErrorMsg(err instanceof Error ? err.message : 'Something went wrong. Please try again.');
       setStatus('error');
-    } else {
-      router.replace('/');
-      router.refresh();
     }
   }
 
