@@ -121,6 +121,7 @@ export default function GameCard({
           winner={isFinal && game.winner_team_id === away.team.id}
           disabled={locked || pending}
           isFinal={isFinal}
+          started={locked}
           onChoose={() => choose(away.team.id)}
           pickedByNames={pickedBy?.away ?? []}
         />
@@ -131,6 +132,7 @@ export default function GameCard({
           winner={isFinal && game.winner_team_id === home.team.id}
           disabled={locked || pending}
           isFinal={isFinal}
+          started={locked}
           onChoose={() => choose(home.team.id)}
           homeLabel
           pickedByNames={pickedBy?.home ?? []}
@@ -181,6 +183,7 @@ function TeamRow({
   winner,
   disabled,
   isFinal,
+  started,
   onChoose,
   homeLabel,
   pickedByNames,
@@ -190,6 +193,7 @@ function TeamRow({
   winner: boolean;
   disabled: boolean;
   isFinal: boolean;
+  started: boolean;
   onChoose: () => void;
   homeLabel?: boolean;
   pickedByNames?: string[];
@@ -250,7 +254,7 @@ function TeamRow({
         </span>
       </span>
       <span className="flex items-center gap-3">
-        {isFinal && (
+        {started && (
           <span className="font-score text-lg tabular text-chalk">{side.points ?? '-'}</span>
         )}
       </span>
