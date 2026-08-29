@@ -1,66 +1,116 @@
-import type { Metadata, Viewport } from 'next';
-import { Bebas_Neue, Inter, Space_Mono } from 'next/font/google';
-import './globals.css';
-import NavBar from '@/components/NavBar';
-import RegisterSW from '@/components/RegisterSW';
+'use client';
 
-// Note: next/font/google fetches these once at build time and self-hosts the
-// result — no runtime calls to Google, no layout shift. It needs outbound
-// network access *during the build only* (fine on Vercel; not available in
-// this sandbox, which is why a local build here reports a fetch error).
-const display = Bebas_Neue({
-  subsets: ['latin'],
-  weight: '400',
-  variable: '--font-display',
-});
+import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useRouter } from 'next/navigation';
 
-const body = Inter({
-  subsets: ['latin'],
-  variable: '--font-body',
-});
+// How far (in px) the user has to pull before releasing triggers a refresh.
+const PULL_THRESHOLD = 70;
+// Visual cap so the indicator doesn't keep stretching on a long drag.
+const MAX_PULL = 100;
 
-const score = Space_Mono({
-  subsets: ['latin'],
-  weight: ['400', '700'],
-  variable: '--font-score',
-});
+/**
+ * Custom pull-to-refresh gesture for the installed PWA.
+ *
+ * Standalone-mode PWAs (manifest.ts sets `display: 'standalone'`) don't get
+ * the browser's native pull-to-refresh on iOS or Android — that gesture only
+ * exists in the browser chrome, which a standalone app doesn't have. This
+ * recreates it by hand: track a downward touch drag starting from the very
+ * top of the scrolled content, show a small spinner that follows the pull,
+ * and call router.refresh() past the threshold.
+ *
+ * router.refresh() re-runs the current route's server components against
+ * fresh data (the Supabase queries in app/picks/[week]/page.tsx, etc.)
+ * without a full page reload, so it's cheap and keeps scroll position.
+ */
+export default function PullToRefresh({ children }: { children: ReactNode }) {
+  const router = useRouter();
+  const [pullDistance, setPullDistance] = useState(0);
+  const [refreshing, setRefreshing] = useState(false);
+  const startY = useRef<number | null>(null);
+  const isPulling = useRef(false);
 
-export const metadata: Metadata = {
-  title: 'Gridiron Pick\u2019em',
-  description: 'The weekly college football pick\u2019em pool.',
-  manifest: '/manifest.webmanifest',
-  appleWebApp: {
-    capable: true,
-    statusBarStyle: 'black-translucent',
-    title: 'CFB Game Time',
-  },
-  icons: {
-    icon: [
-      { url: '/icon-192.png', sizes: '192x192', type: 'image/png' },
-      { url: '/icon-512.png', sizes: '512x512', type: 'image/png' },
-    ],
-    apple: [{ url: '/apple-touch-icon.png', sizes: '180x180', type: 'image/png' }],
-  },
-};
+  useEffect(() => {
+    function onTouchStart(e: TouchEvent) {
+      // Only start tracking if we're already at the very top of the page —
+      // otherwise this would hijack ordinary scrolling everywhere else.
+      if (window.scrollY > 0 || refreshing) return;
+      startY.current = e.touches[0].clientY;
+      isPulling.current = true;
+    }
 
-export const viewport: Viewport = {
-  width: 'device-width',
-  initialScale: 1,
-  themeColor: '#08090B',
-};
+    function onTouchMove(e: TouchEvent) {
+      if (!isPulling.current || startY.current === null) return;
+      const delta = e.touches[0].clientY - startY.current;
+      if (delta <= 0) {
+        setPullDistance(0);
+        return;
+      }
+      // Damped so the indicator doesn't chase the finger 1:1 the whole way.
+      setPullDistance(Math.min(MAX_PULL, delta * 0.5));
+    }
 
-export default function RootLayout({
-  children,
-}: {
-  children: React.ReactNode;
-}) {
+    function onTouchEnd() {
+      if (!isPulling.current) return;
+      isPulling.current = false;
+      startY.current = null;
+
+      setPullDistance((current) => {
+        if (current >= PULL_THRESHOLD) {
+          setRefreshing(true);
+          router.refresh();
+          // router.refresh() doesn't return a promise to await, so this is
+          // an approximation of "the refresh visibly landed" rather than a
+          // precise signal.
+          setTimeout(() => {
+            setRefreshing(false);
+            setPullDistance(0);
+          }, 700);
+          return current;
+        }
+        return 0;
+      });
+    }
+
+    window.addEventListener('touchstart', onTouchStart, { passive: true });
+    window.addEventListener('touchmove', onTouchMove, { passive: true });
+    window.addEventListener('touchend', onTouchEnd);
+
+    return () => {
+      window.removeEventListener('touchstart', onTouchStart);
+      window.removeEventListener('touchmove', onTouchMove);
+      window.removeEventListener('touchend', onTouchEnd);
+    };
+  }, [refreshing, router]);
+
+  const indicatorVisible = pullDistance > 0 || refreshing;
+
   return (
-    <html lang="en" className={`${display.variable} ${body.variable} ${score.variable}`}>
-      <body className="font-body min-h-screen">
-        <RegisterSW />
-        <NavBar />
-        <main className="mx-auto max-w-4xl px-4 pb-24 pt-6 sm:px-6">{children}</main>
-      </body>
-    </html>
+    <>
+      <div
+        aria-hidden
+        className="pointer-events-none fixed left-0 right-0 top-0 z-50 flex justify-center transition-opacity"
+        style={{ opacity: indicatorVisible ? 1 : 0 }}
+      >
+        <div
+          className="mt-2 flex h-8 w-8 items-center justify-center rounded-full border border-field-line bg-field-panel shadow-glow transition-transform"
+          style={{ transform: `translateY(${refreshing ? 16 : pullDistance - 24}px)` }}
+        >
+          <div
+            className={`h-4 w-4 rounded-full border-2 border-bulb border-t-transparent ${
+              refreshing ? 'animate-spin' : ''
+            }`}
+            style={refreshing ? undefined : { transform: `rotate(${pullDistance * 3}deg)` }}
+          />
+        </div>
+      </div>
+      <div
+        style={{
+          transform: pullDistance > 0 ? `translateY(${pullDistance}px)` : undefined,
+          transition: isPulling.current ? 'none' : 'transform 0.2s ease-out',
+        }}
+      >
+        {children}
+      </div>
+    </>
   );
 }
