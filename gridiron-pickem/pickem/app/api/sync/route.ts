@@ -98,6 +98,33 @@ export async function GET(request: NextRequest) {
     }
 
     const confByTeamId = new Map(teams.map((t) => [t.id, t.conference]));
+
+    // app/api/sync/live can grade a game (completed/winner_team_id) ahead
+    // of this sync, from ESPN's fast final-state signal. This sync must
+    // never revert that — only take over as the authoritative record once
+    // CFBD's own data agrees the game is over. Pulling the current DB
+    // state first is what makes that check possible.
+    const gameIds = games.map((g) => g.id);
+    const { data: existingRows, error: existingError } =
+      gameIds.length > 0
+        ? await supabase
+            .from('games')
+            .select('id, completed, winner_team_id, home_points, away_points, overtime, live_status, period, clock')
+            .in('id', gameIds)
+        : { data: [] as Array<{
+            id: number;
+            completed: boolean;
+            winner_team_id: number | null;
+            home_points: number | null;
+            away_points: number | null;
+            overtime: boolean;
+            live_status: string | null;
+            period: number | null;
+            clock: string | null;
+          }>, error: null };
+    if (existingError) throw existingError;
+    const existingById = new Map((existingRows ?? []).map((r) => [r.id, r]));
+
     const gameRows = games.map((g) => {
       const homeRank = top25.get(g.home_team) ?? null;
       const awayRank = top25.get(g.away_team) ?? null;
@@ -112,14 +139,25 @@ export async function GET(request: NextRequest) {
       // UI treats null period/clock as "no live data" and shows its
       // pre-kickoff countdown or Final badge instead.
       const live = liveScoreboard.get(g.id);
+      const existing = existingById.get(g.id);
 
-      // While a game is in progress, ESPN's scoreboard score (see
-      // fetchLiveScoreboard) is more current than CFBD's home_points/
-      // away_points, which isn't guaranteed to update play-by-play on a
-      // free-tier key. Once the game is no longer in the live map (i.e.
-      // it's final), CFBD's own points are the source of truth again.
-      const homePoints = live?.homePoints ?? g.home_points;
-      const awayPoints = live?.awayPoints ?? g.away_points;
+      // ESPN already graded this game (via app/api/sync/live) and CFBD
+      // hasn't caught up yet — leave the scoring fields exactly as they
+      // are rather than reverting to CFBD's still-in-progress numbers.
+      // Once CFBD's own g.completed flips true, this stops applying and
+      // CFBD's values take over below as normal.
+      const alreadyGradedByEspn = existing?.completed === true && !g.completed;
+
+      const homePoints = alreadyGradedByEspn
+        ? existing!.home_points
+        : g.completed
+          ? g.home_points
+          : live?.homePoints ?? g.home_points;
+      const awayPoints = alreadyGradedByEspn
+        ? existing!.away_points
+        : g.completed
+          ? g.away_points
+          : live?.awayPoints ?? g.away_points;
 
       return {
         id: g.id,
@@ -131,17 +169,19 @@ export async function GET(request: NextRequest) {
         away_team_id: g.away_id,
         home_points: homePoints,
         away_points: awayPoints,
-        completed: g.completed,
-        winner_team_id: g.completed
-          ? (g.home_points ?? 0) > (g.away_points ?? 0)
-            ? g.home_id
-            : g.away_id
-          : null,
+        completed: alreadyGradedByEspn ? true : g.completed,
+        winner_team_id: alreadyGradedByEspn
+          ? existing!.winner_team_id
+          : g.completed
+            ? (g.home_points ?? 0) > (g.away_points ?? 0)
+              ? g.home_id
+              : g.away_id
+            : null,
         featured: isRanked || isSecMatchup,
         home_rank: homeRank,
         away_rank: awayRank,
         neutral_site: g.neutral_site,
-        overtime: g.overtime,
+        overtime: alreadyGradedByEspn ? existing!.overtime : g.overtime,
         // Full-field SP+ rank, used to test the bylaws' "ranked at least 20
         // spots higher" upset rule even when neither team is in the AP
         // Top 25 (e.g. two unranked SEC teams playing each other).
@@ -154,9 +194,9 @@ export async function GET(request: NextRequest) {
         away_classification: g.away_classification,
         // Live in-progress state (see fetchLiveScoreboard) — drives the
         // "Q3 · 8:42" badge in place of the static "Kicked off" label.
-        live_status: live?.status ?? null,
-        period: live?.period ?? null,
-        clock: live?.clock ?? null,
+        live_status: alreadyGradedByEspn ? existing!.live_status : live?.status ?? null,
+        period: alreadyGradedByEspn ? existing!.period : live?.period ?? null,
+        clock: alreadyGradedByEspn ? existing!.clock : live?.clock ?? null,
       };
     });
 
