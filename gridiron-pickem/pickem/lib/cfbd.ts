@@ -35,7 +35,21 @@ export type CfbdLiveStatus = {
   status: string | null;
   period: number | null;
   clock: string | null;
-  /** Live score from ESPN's scoreboard, more current than CFBD's during an in-progress game. */
+  /**
+   * True once ESPN reports the game as final (status.type.completed).
+   * Lets a caller grade a game the moment ESPN sees it end, without
+   * waiting on CFBD's own (much less frequent) sync — see
+   * app/api/sync/live/route.ts. CFBD's own sync remains the backstop:
+   * once it also agrees the game is over, its numbers become (and stay)
+   * authoritative, per the group's bylaws.
+   */
+  completed: boolean;
+  /**
+   * Live/final score from ESPN's scoreboard. Used both as a display-only
+   * number while a game is in progress, and — only once `completed` above
+   * is true — as the actual graded score until CFBD's own sync confirms
+   * or corrects it.
+   */
   homePoints: number | null;
   awayPoints: number | null;
 };
@@ -197,8 +211,28 @@ export async function fetchSpRanks(year: number): Promise<Map<string, number>> {
   return ranks;
 }
 
-const ESPN_SCOREBOARD_URL =
-  'https://site.api.espn.com/apis/site/v2/sports/football/college-football/scoreboard?limit=1000';
+const ESPN_SCOREBOARD_BASE =
+  'https://site.api.espn.com/apis/site/v2/sports/football/college-football/scoreboard';
+
+/**
+ * Today's date in US Eastern time, formatted YYYYMMDD — the format ESPN's
+ * scoreboard endpoint expects for its `dates` query param.
+ *
+ * Eastern time, not UTC: US college football scheduling (and ESPN's own
+ * date grouping) is anchored to the Eastern calendar day, and a UTC "today"
+ * would occasionally clip a late West Coast kickoff (which lands after
+ * midnight UTC) into the wrong bucket.
+ */
+function todayEspnDateParam(): string {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'America/New_York',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(new Date());
+  const get = (type: string) => parts.find((p) => p.type === type)?.value ?? '';
+  return `${get('year')}${get('month')}${get('day')}`;
+}
 
 /**
  * Loosely normalizes a school name for matching CFBD's team names against
@@ -218,131 +252,14 @@ function normalizeTeamName(name: string): string {
 }
 
 /**
- * Maps game id -> live in-progress state (status/period/clock/score).
+ * Maps game id -> live/final state (status/period/clock/score/completed).
  *
  * CFBD's own live scoreboard endpoint (`/scoreboard`) requires a Patreon
  * Tier 1+ subscription and returns 401 on a free-tier key — confirmed
  * against the real API. This uses ESPN's public, unauthenticated
  * scoreboard endpoint instead, which is undocumented but has no key
- * requirement and returns the same kind of live period/clock/status data.
- * It also happens to carry the current score, which is more trustworthy
- * than CFBD's `home_points`/`away_points` while a game is still in
- * progress — the sync route prefers this score over CFBD's for any game
- * this map has an entry for.
+ * requirement and returns the same kind of live period/clock/status data,
+ * plus the current score and whether the game has ended.
  *
- * ESPN uses its own game and team ids, not CFBD's, so games are matched by
- * normalized home/away school name rather than id. Only games ESPN reports
- * as actually in progress (`state === 'in'`) get an entry — pre-kickoff and
- * final games are left for the caller's existing countdown/Final handling,
- * since ESPN's pre-game period/clock are just placeholder zeros.
- *
- * Best-effort throughout: since this is an unofficial endpoint that could
- * change shape or disappear without notice, any failure is logged and
- * swallowed so the rest of the sync still succeeds.
- */
-export async function fetchLiveScoreboard(
-  games: Pick<CfbdGame, 'id' | 'home_team' | 'away_team'>[]
-): Promise<Map<number, CfbdLiveStatus>> {
-  const result = new Map<number, CfbdLiveStatus>();
-  if (games.length === 0) return result;
-
-  try {
-    const res = await fetch(ESPN_SCOREBOARD_URL, { cache: 'no-store' });
-
-    if (!res.ok) {
-      console.error(`ESPN scoreboard failed: ${res.status} ${await res.text()}`);
-      return result;
-    }
-
-    const raw = await res.json();
-    const events = (raw.events ?? []) as Array<Record<string, unknown>>;
-
-    // Build a lookup of normalized "home|away" -> live status, from every
-    // in-progress event ESPN is currently reporting.
-    const liveByTeamPair = new Map<string, CfbdLiveStatus>();
-
-    for (const event of events) {
-      const competition = (event.competitions as Array<Record<string, unknown>> | undefined)?.[0];
-      if (!competition) continue;
-
-      const status = competition.status as Record<string, unknown> | undefined;
-      const type = status?.type as Record<string, unknown> | undefined;
-      if (type?.state !== 'in') continue; // only care about live games
-
-      const competitors = competition.competitors as
-        | Array<{ homeAway: string; team?: { location?: string }; score?: string }>
-        | undefined;
-      const homeCompetitor = competitors?.find((c) => c.homeAway === 'home');
-      const awayCompetitor = competitors?.find((c) => c.homeAway === 'away');
-      const home = homeCompetitor?.team?.location;
-      const away = awayCompetitor?.team?.location;
-      if (!home || !away) continue;
-
-      // ESPN gives score as a numeric string on each competitor; fall back
-      // to null rather than 0 if it's missing/unparseable so this doesn't
-      // silently overwrite a real CFBD score with a false "0-0".
-      const homePoints = homeCompetitor?.score !== undefined ? Number(homeCompetitor.score) : null;
-      const awayPoints = awayCompetitor?.score !== undefined ? Number(awayCompetitor.score) : null;
-
-      const key = `${normalizeTeamName(home)}|${normalizeTeamName(away)}`;
-      liveByTeamPair.set(key, {
-        status: (type?.name ?? null) as string | null,
-        period: (status?.period ?? null) as number | null,
-        clock: (status?.displayClock ?? null) as string | null,
-        homePoints: Number.isFinite(homePoints) ? homePoints : null,
-        awayPoints: Number.isFinite(awayPoints) ? awayPoints : null,
-      });
-    }
-
-    for (const g of games) {
-      const key = `${normalizeTeamName(g.home_team)}|${normalizeTeamName(g.away_team)}`;
-      const live = liveByTeamPair.get(key);
-      if (live) result.set(g.id, live);
-    }
-  } catch (err) {
-    console.error('ESPN scoreboard fetch threw (non-fatal)', err);
-  }
-
-  return result;
-}
-
-/**
- * Best-effort lookup of the actual College Football Playoff field (the 12
- * teams that made it) for a season, derived from postseason game notes.
- *
- * CFBD labels playoff-round postseason games' `notes` field with the round
- * name (e.g. "First Round", "Quarterfinal"). The 8 non-bye teams all appear
- * in a "First Round" game; the 4 bye teams only first appear in a
- * "Quarterfinal" game. Unioning participants across both rounds recovers
- * all 12. This is inherently a bit fragile (it depends on CFBD's note
- * wording, and only works once the bracket has been announced), so treat
- * the `playoff_field` table as having a manual-override escape hatch if
- * this ever comes back short.
- */
-export async function fetchActualPlayoffField(year: number): Promise<number[]> {
-  const games = await fetchGames({ year, seasonType: 'postseason' });
-
-  const roundNamePattern = /first round|quarterfinal/i;
-  const teamIds = new Set<number>();
-
-  for (const g of games) {
-    if (!g.notes || !roundNamePattern.test(g.notes)) continue;
-    teamIds.add(g.home_id);
-    teamIds.add(g.away_id);
-  }
-
-  return Array.from(teamIds);
-}
-
-/** Which CFB week "now" falls in, using the regular season's Tuesday-to-Tuesday
- *  week boundaries. Falls back to week 1 before the season starts. */
-export function currentSeasonAndWeek(now = new Date()): { season: number; week: number } {
-  const year = now.getUTCFullYear();
-  const seasonStart = new Date(Date.UTC(year, 7, 24));
-  if (now < seasonStart) {
-    return { season: year, week: 1 };
-  }
-  const diffMs = now.getTime() - seasonStart.getTime();
-  const week = Math.min(15, Math.max(1, Math.floor(diffMs / (7 * 24 * 60 * 60 * 1000)) + 1));
-  return { season: year, week };
-}
+ * Grading model: app/api/sync/live uses `completed` here to grade a game
+ * (set completed/winner_team_id) the moment ESPN
