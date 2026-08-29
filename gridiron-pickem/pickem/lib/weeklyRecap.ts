@@ -24,6 +24,41 @@ export type UserWeekRecap = {
   picks: RecapPickRow[];
 };
 
+export type WeekGameRow = {
+  gameId: number;
+  startDate: string;
+  completed: boolean;
+  home: Team;
+  away: Team;
+};
+
+/**
+ * The plain list of this week's games (one row each, not one per person) —
+ * used for the games table on /recap/[week]. Shares the same sort/filter
+ * logic as `buildWeeklyRecap` so the two stay in sync, but doesn't require
+ * any profiles to exist.
+ */
+export function buildWeekGames({
+  games,
+  teamById,
+}: {
+  games: Game[];
+  teamById: Map<number, Team>;
+}): WeekGameRow[] {
+  const sorted = [...games].sort(
+    (a, b) => new Date(a.start_date).getTime() - new Date(b.start_date).getTime()
+  );
+
+  const rows: WeekGameRow[] = [];
+  for (const game of sorted) {
+    const home = game.home_team_id !== null ? teamById.get(game.home_team_id) : undefined;
+    const away = game.away_team_id !== null ? teamById.get(game.away_team_id) : undefined;
+    if (!home || !away) continue;
+    rows.push({ gameId: game.id, startDate: game.start_date, completed: game.completed, home, away });
+  }
+  return rows;
+}
+
 /**
  * Builds a per-person, per-game breakdown of a single week — the itemized
  * sibling of `buildStandings`. Where `buildStandings` sums each player's
