@@ -5,6 +5,7 @@ import {
   fetchTeams,
   fetchTop25,
   fetchSpRanks,
+  fetchLiveScoreboard,
   fetchActualPlayoffField,
   currentSeasonAndWeek,
 } from '@/lib/cfbd';
@@ -31,12 +32,13 @@ export async function GET(request: NextRequest) {
   const { season, week } = currentSeasonAndWeek();
 
   try {
-    const [teams, thisWeek, lastWeek, top25, spRanks] = await Promise.all([
+    const [teams, thisWeek, lastWeek, top25, spRanks, liveScoreboard] = await Promise.all([
       fetchTeams(season),
       fetchGames({ year: season, week }),
       week > 1 ? fetchGames({ year: season, week: week - 1 }) : Promise.resolve([]),
       fetchTop25({ year: season, week }),
       fetchSpRanks(season),
+      fetchLiveScoreboard(),
     ]);
 
     const teamRows = teams.map((t) => ({
@@ -98,6 +100,14 @@ export async function GET(request: NextRequest) {
       const isSecMatchup =
         confByTeamId.get(g.home_id) === 'SEC' || confByTeamId.get(g.away_id) === 'SEC';
 
+      // Best-effort live status for this game, if the scoreboard endpoint
+      // returned one. Games not currently in progress (not yet kicked off,
+      // already final, or just absent from this particular poll) simply
+      // won't have an entry, and gameRows below fall back to nulls — the
+      // UI treats null period/clock as "no live data" and shows its
+      // pre-kickoff countdown or Final badge instead.
+      const live = liveScoreboard.get(g.id);
+
       return {
         id: g.id,
         season: g.season,
@@ -129,6 +139,11 @@ export async function GET(request: NextRequest) {
         // as upsets regardless of (missing) rank data.
         home_classification: g.home_classification,
         away_classification: g.away_classification,
+        // Live in-progress state (see fetchLiveScoreboard) — drives the
+        // "Q3 · 8:42" badge in place of the static "Kicked off" label.
+        live_status: live?.status ?? null,
+        period: live?.period ?? null,
+        clock: live?.clock ?? null,
       };
     });
 
@@ -163,6 +178,7 @@ export async function GET(request: NextRequest) {
       gamesSynced: gameRows.length,
       rankedSchoolsFound: top25.size,
       spRanksFound: spRanks.size,
+      liveGamesFound: liveScoreboard.size,
       playoffFieldSynced,
     });
   } catch (err) {
