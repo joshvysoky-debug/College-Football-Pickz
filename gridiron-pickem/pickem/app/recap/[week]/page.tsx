@@ -3,7 +3,7 @@ import { createClient } from '@/lib/supabase/server';
 import RecapBoard from '@/components/RecapBoard';
 import { currentSeasonAndWeek } from '@/lib/cfbd';
 import { formatWeekDateRange } from '@/lib/dateFormat';
-import { buildWeeklyRecap } from '@/lib/weeklyRecap';
+import { buildWeekGames, buildWeeklyRecap } from '@/lib/weeklyRecap';
 import type { Game, Team } from '@/lib/database.types';
 
 export const dynamic = 'force-dynamic';
@@ -64,6 +64,8 @@ export default async function RecapWeekPage({ params }: { params: { week: string
     teamById,
   });
 
+  const weekGames = buildWeekGames({ games: (games ?? []) as Game[], teamById });
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -95,7 +97,7 @@ export default async function RecapWeekPage({ params }: { params: { week: string
           </p>
         </div>
       ) : (
-        <RecapBoard recaps={recaps} />
+        <RecapBoard recaps={recaps} games={weekGames} />
       )}
     </div>
   );
