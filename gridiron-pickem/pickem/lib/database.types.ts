@@ -31,6 +31,15 @@ export type Game = {
   /** 'fbs' / 'fcs' / etc. — used to force FBS-vs-FCS games to count as upsets. */
   home_classification: string | null;
   away_classification: string | null;
+  /**
+   * Live in-progress state from CFBD's scoreboard endpoint. All three are
+   * null until a game is in progress (or if the live endpoint didn't have
+   * an entry for it on the last sync) — the UI treats that as "no live
+   * data" and falls back to the pre-kickoff countdown or Final badge.
+   */
+  live_status: string | null;
+  period: number | null;
+  clock: string | null;
 };
 
 export type Profile = {
