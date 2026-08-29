@@ -1,6 +1,7 @@
 import { redirect } from 'next/navigation';
 import { createClient } from '@/lib/supabase/server';
 import ProfileForm from '@/components/ProfileForm';
+import PasswordForm from '@/components/PasswordForm';
 
 export const dynamic = 'force-dynamic';
 
@@ -33,6 +34,7 @@ export default async function ProfilePage() {
         initialDisplayName={profile?.display_name ?? ''}
         email={profile?.email ?? user.email ?? ''}
       />
+      <PasswordForm />
     </div>
   );
 }
