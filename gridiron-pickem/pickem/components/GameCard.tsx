@@ -122,7 +122,7 @@ export default function GameCard({
           disabled={locked || pending}
           isFinal={isFinal}
           onChoose={() => choose(away.team.id)}
-          pickedByNames={locked ? pickedBy?.away ?? [] : undefined}
+          pickedByNames={pickedBy?.away ?? []}
         />
         <div className="h-px bg-field-line" />
         <TeamRow
@@ -133,7 +133,7 @@ export default function GameCard({
           isFinal={isFinal}
           onChoose={() => choose(home.team.id)}
           homeLabel
-          pickedByNames={locked ? pickedBy?.home ?? [] : undefined}
+          pickedByNames={pickedBy?.home ?? []}
         />
       </div>
       <div className="stub-perf" />
@@ -252,11 +252,6 @@ function TeamRow({
       <span className="flex items-center gap-3">
         {isFinal && (
           <span className="font-score text-lg tabular text-chalk">{side.points ?? '-'}</span>
-        )}
-        {selected && !isFinal && (
-          <span className="font-score text-[10px] uppercase tracking-widest text-bulb">
-            Your pick &middot; tap to clear
-          </span>
         )}
       </span>
     </button>
