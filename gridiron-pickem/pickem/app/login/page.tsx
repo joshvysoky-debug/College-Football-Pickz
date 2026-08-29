@@ -4,30 +4,56 @@ import { useState } from 'react';
 import Image from 'next/image';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
+import { withTimeout, AUTH_REQUEST_TIMEOUT_MS } from '@/lib/withAuthTimeout';
 
-const AUTH_REQUEST_TIMEOUT_MS = 10000;
-
-// Supabase's auth calls have no timeout of their own — if the endpoint (or
-// the SMTP send behind signInWithOtp) is slow, the promise just never
-// resolves and the button hangs on "Sending..." forever with no way out.
-// This races the real call against a timer so the UI always recovers with
-// a clear, retryable error instead of hanging indefinitely.
-function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
-  return Promise.race([
-    promise,
-    new Promise<T>((_, reject) =>
-      setTimeout(() => reject(new Error('Request timed out. Please try again.')), ms)
-    ),
-  ]);
-}
+type Method = 'password' | 'code';
+type CodeStep = 'email' | 'code';
 
 export default function LoginPage() {
   const router = useRouter();
+  const [method, setMethod] = useState<Method>('password');
+
+  // Password method state
+  const [pwEmail, setPwEmail] = useState('');
+  const [password, setPassword] = useState('');
+
+  // Emailed-code method state
   const [email, setEmail] = useState('');
   const [code, setCode] = useState('');
-  const [step, setStep] = useState<'email' | 'code'>('email');
+  const [codeStep, setCodeStep] = useState<CodeStep>('email');
+
   const [status, setStatus] = useState<'idle' | 'loading' | 'error'>('idle');
   const [errorMsg, setErrorMsg] = useState('');
+
+  function switchMethod(next: Method) {
+    setMethod(next);
+    setCodeStep('email');
+    setStatus('idle');
+    setErrorMsg('');
+  }
+
+  async function handlePasswordSignIn(e: React.FormEvent) {
+    e.preventDefault();
+    setStatus('loading');
+    setErrorMsg('');
+    const supabase = createClient();
+    try {
+      const { error } = await withTimeout(
+        supabase.auth.signInWithPassword({ email: pwEmail, password }),
+        AUTH_REQUEST_TIMEOUT_MS
+      );
+      if (error) {
+        setErrorMsg(error.message);
+        setStatus('error');
+      } else {
+        router.replace('/');
+        router.refresh();
+      }
+    } catch (err) {
+      setErrorMsg(err instanceof Error ? err.message : 'Something went wrong. Please try again.');
+      setStatus('error');
+    }
+  }
 
   async function handleSendCode(e: React.FormEvent) {
     e.preventDefault();
@@ -53,7 +79,7 @@ export default function LoginPage() {
         setStatus('error');
       } else {
         setStatus('idle');
-        setStep('code');
+        setCodeStep('code');
       }
     } catch (err) {
       setErrorMsg(err instanceof Error ? err.message : 'Something went wrong. Please try again.');
@@ -105,11 +131,53 @@ export default function LoginPage() {
       </p>
 
       <div className="rounded-lg border border-field-line bg-field-panel px-8 py-10 shadow-glow">
-        {step === 'email' ? (
+        {method === 'password' && (
+          <>
+            <p className="text-sm text-muted">Sign in with your email and password.</p>
+            <form onSubmit={handlePasswordSignIn} className="mt-6 space-y-3">
+              <input
+                type="email"
+                required
+                placeholder="you@example.com"
+                value={pwEmail}
+                onChange={(e) => setPwEmail(e.target.value)}
+                autoComplete="email"
+                className="w-full rounded border border-field-line bg-field-night px-3 py-2 text-chalk placeholder:text-muted focus:border-bulb"
+              />
+              <input
+                type="password"
+                required
+                placeholder="Password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                autoComplete="current-password"
+                className="w-full rounded border border-field-line bg-field-night px-3 py-2 text-chalk placeholder:text-muted focus:border-bulb"
+              />
+              <button
+                type="submit"
+                disabled={status === 'loading'}
+                className="w-full rounded bg-bulb px-3 py-2 font-semibold text-field-night transition hover:bg-bulb-dim disabled:opacity-50"
+              >
+                {status === 'loading' ? 'Signing in\u2026' : 'Sign in'}
+              </button>
+              {status === 'error' && <p className="text-sm text-miss">{errorMsg}</p>}
+            </form>
+            <button
+              type="button"
+              onClick={() => switchMethod('code')}
+              className="mt-4 w-full text-center text-xs text-muted underline"
+            >
+              First time, or no password set yet? Use an emailed code
+            </button>
+          </>
+        )}
+
+        {method === 'code' && codeStep === 'email' && (
           <>
             <p className="text-sm text-muted">
-              Enter your email and we&rsquo;ll send you a 6-digit code to sign in. No
-              password to remember.
+              Enter your email and we&rsquo;ll send you a 6-digit code to sign in. Once
+              you&rsquo;re in, set a password from your profile so you can skip this next
+              time.
             </p>
             <form onSubmit={handleSendCode} className="mt-6 space-y-3">
               <input
@@ -129,8 +197,17 @@ export default function LoginPage() {
               </button>
               {status === 'error' && <p className="text-sm text-miss">{errorMsg}</p>}
             </form>
+            <button
+              type="button"
+              onClick={() => switchMethod('password')}
+              className="mt-4 w-full text-center text-xs text-muted underline"
+            >
+              Use a password instead
+            </button>
           </>
-        ) : (
+        )}
+
+        {method === 'code' && codeStep === 'code' && (
           <>
             <p className="text-sm text-muted">
               Check your inbox for a 6-digit code and enter it below. (If you tapped the
@@ -159,7 +236,7 @@ export default function LoginPage() {
               <button
                 type="button"
                 onClick={() => {
-                  setStep('email');
+                  setCodeStep('email');
                   setStatus('idle');
                   setCode('');
                   setErrorMsg('');
