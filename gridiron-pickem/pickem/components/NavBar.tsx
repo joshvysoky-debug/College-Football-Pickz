@@ -38,6 +38,9 @@ export default async function NavBar() {
             <Link href="/standings" className="text-muted transition hover:text-bulb-bright">
               Standings
             </Link>
+            <Link href="/recap" className="text-muted transition hover:text-bulb-bright">
+              Recap
+            </Link>
             <Link href="/playoff-picks" className="text-muted transition hover:text-bulb-bright">
               Playoff Picks
             </Link>
