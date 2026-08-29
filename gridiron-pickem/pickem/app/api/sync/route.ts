@@ -32,13 +32,12 @@ export async function GET(request: NextRequest) {
   const { season, week } = currentSeasonAndWeek();
 
   try {
-    const [teams, thisWeek, lastWeek, top25, spRanks, liveScoreboard] = await Promise.all([
+    const [teams, thisWeek, lastWeek, top25, spRanks] = await Promise.all([
       fetchTeams(season),
       fetchGames({ year: season, week }),
       week > 1 ? fetchGames({ year: season, week: week - 1 }) : Promise.resolve([]),
       fetchTop25({ year: season, week }),
       fetchSpRanks(season),
-      fetchLiveScoreboard(),
     ]);
 
     const teamRows = teams.map((t) => ({
@@ -53,6 +52,12 @@ export async function GET(request: NextRequest) {
     const knownTeamIds = new Set(teamRows.map((t) => t.id));
 
     const games = [...lastWeek, ...thisWeek];
+
+    // Needs the actual games list (for team-name matching against ESPN's
+    // scoreboard) so this can't join the Promise.all above — it has to run
+    // after `games` exists. See fetchLiveScoreboard's doc comment for why
+    // this isn't a CFBD call.
+    const liveScoreboard = await fetchLiveScoreboard(games);
 
     // CFBD's /teams endpoint (even filtered to division=fbs) only covers
     // that season's FBS roster. Games against FCS/lower-division opponents
