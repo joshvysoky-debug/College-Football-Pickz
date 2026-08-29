@@ -11,7 +11,7 @@ export function formatLiveStatus(
 ): string | null {
   const normalizedStatus = liveStatusField?.toLowerCase() ?? null;
 
-  if (normalizedStatus === 'halftime') return 'Halftime';
+  if (normalizedStatus?.includes('halftime')) return 'Halftime';
 
   if (period === null) return null;
 
