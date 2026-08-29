@@ -35,6 +35,9 @@ export type CfbdLiveStatus = {
   status: string | null;
   period: number | null;
   clock: string | null;
+  /** Live score from ESPN's scoreboard, more current than CFBD's during an in-progress game. */
+  homePoints: number | null;
+  awayPoints: number | null;
 };
 
 function authHeaders() {
@@ -215,13 +218,17 @@ function normalizeTeamName(name: string): string {
 }
 
 /**
- * Maps game id -> live in-progress state (status/period/clock).
+ * Maps game id -> live in-progress state (status/period/clock/score).
  *
  * CFBD's own live scoreboard endpoint (`/scoreboard`) requires a Patreon
  * Tier 1+ subscription and returns 401 on a free-tier key — confirmed
  * against the real API. This uses ESPN's public, unauthenticated
  * scoreboard endpoint instead, which is undocumented but has no key
  * requirement and returns the same kind of live period/clock/status data.
+ * It also happens to carry the current score, which is more trustworthy
+ * than CFBD's `home_points`/`away_points` while a game is still in
+ * progress — the sync route prefers this score over CFBD's for any game
+ * this map has an entry for.
  *
  * ESPN uses its own game and team ids, not CFBD's, so games are matched by
  * normalized home/away school name rather than id. Only games ESPN reports
@@ -263,17 +270,27 @@ export async function fetchLiveScoreboard(
       if (type?.state !== 'in') continue; // only care about live games
 
       const competitors = competition.competitors as
-        | Array<{ homeAway: string; team?: { location?: string } }>
+        | Array<{ homeAway: string; team?: { location?: string }; score?: string }>
         | undefined;
-      const home = competitors?.find((c) => c.homeAway === 'home')?.team?.location;
-      const away = competitors?.find((c) => c.homeAway === 'away')?.team?.location;
+      const homeCompetitor = competitors?.find((c) => c.homeAway === 'home');
+      const awayCompetitor = competitors?.find((c) => c.homeAway === 'away');
+      const home = homeCompetitor?.team?.location;
+      const away = awayCompetitor?.team?.location;
       if (!home || !away) continue;
+
+      // ESPN gives score as a numeric string on each competitor; fall back
+      // to null rather than 0 if it's missing/unparseable so this doesn't
+      // silently overwrite a real CFBD score with a false "0-0".
+      const homePoints = homeCompetitor?.score !== undefined ? Number(homeCompetitor.score) : null;
+      const awayPoints = awayCompetitor?.score !== undefined ? Number(awayCompetitor.score) : null;
 
       const key = `${normalizeTeamName(home)}|${normalizeTeamName(away)}`;
       liveByTeamPair.set(key, {
         status: (type?.name ?? null) as string | null,
         period: (status?.period ?? null) as number | null,
         clock: (status?.displayClock ?? null) as string | null,
+        homePoints: Number.isFinite(homePoints) ? homePoints : null,
+        awayPoints: Number.isFinite(awayPoints) ? awayPoints : null,
       });
     }
 
