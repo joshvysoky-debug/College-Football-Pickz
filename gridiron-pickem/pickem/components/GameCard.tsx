@@ -5,6 +5,7 @@ import Image from 'next/image';
 import { useRouter } from 'next/navigation';
 import Countdown from '@/components/Countdown';
 import { formatGameDateTimeCT } from '@/lib/dateFormat';
+import { formatLiveStatus } from '@/lib/liveStatus';
 import { potentialPickPoints } from '@/lib/scoring';
 import type { LastWeekResult } from '@/lib/teamStats';
 import type { Game, Team } from '@/lib/database.types';
@@ -79,6 +80,7 @@ export default function GameCard({
   }
 
   const isFinal = game.completed;
+  const liveLabel = isFinal ? null : formatLiveStatus(game.live_status, game.period, game.clock);
 
   const { homePoints, awayPoints } = potentialPickPoints({
     homeRank: game.home_sp_rank,
@@ -104,6 +106,8 @@ export default function GameCard({
             <span className="mx-1.5">&middot;</span>
             {isFinal ? (
               <span className="uppercase tracking-widest text-muted">Final</span>
+            ) : liveLabel ? (
+              <span className="uppercase tracking-widest text-turf-bright">{liveLabel}</span>
             ) : (
               <Countdown startDate={game.start_date} />
             )}
