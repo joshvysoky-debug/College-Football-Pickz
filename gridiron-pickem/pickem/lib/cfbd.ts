@@ -30,6 +30,13 @@ export type CfbdTeam = {
   logos: string[] | null;
 };
 
+/** A single game's live in-progress state, keyed by game id in fetchLiveScoreboard's result. */
+export type CfbdLiveStatus = {
+  status: string | null;
+  period: number | null;
+  clock: string | null;
+};
+
 function authHeaders() {
   const key = process.env.CFBD_API_KEY;
   if (!key) throw new Error('CFBD_API_KEY is not set');
@@ -185,6 +192,60 @@ export async function fetchSpRanks(year: number): Promise<Map<string, number>> {
   const ranks = new Map<string, number>();
   sorted.forEach((t, i) => ranks.set(t.team, i + 1));
   return ranks;
+}
+
+/**
+ * Maps game id -> live in-progress state (status/period/clock), sourced
+ * from CFBD's live scoreboard endpoint.
+ *
+ * This is a *separate* endpoint from /games: /games only ever reflects
+ * scheduled-vs-completed state (final score, `completed` flag), it never
+ * carries an in-progress quarter/clock. /scoreboard is what has that, but
+ * it's a live-tier CFBD feature — on some API plans it may return an empty
+ * list or a 403 outside of your plan's access. Treat it as best-effort:
+ * on any failure, log and return an empty map so the sync as a whole still
+ * succeeds and the UI just falls back to its pre-kickoff countdown.
+ *
+ * NOTE: this hasn't been exercised against a live Saturday yet. If the
+ * field names below don't match what your CFBD plan actually returns,
+ * open a browser to
+ *   https://api.collegefootballdata.com/scoreboard?classification=fbs
+ * (with your API key) mid-game and compare — the aliasing below tries
+ * both the documented GraphQL-style names (currentPeriod/currentClock)
+ * and plainer REST-style ones (period/clock) defensively, the same way
+ * fetchGames() aliases camelCase vs snake_case.
+ */
+export async function fetchLiveScoreboard(): Promise<Map<number, CfbdLiveStatus>> {
+  const result = new Map<number, CfbdLiveStatus>();
+
+  try {
+    const res = await fetch(`${CFBD_BASE}/scoreboard?classification=fbs`, {
+      headers: authHeaders(),
+      cache: 'no-store',
+    });
+
+    if (!res.ok) {
+      console.error(`CFBD /scoreboard failed: ${res.status} ${await res.text()}`);
+      return result;
+    }
+
+    const raw = await res.json();
+
+    for (const g of raw as Array<Record<string, unknown>>) {
+      const id = g.id as number | undefined;
+      if (id === undefined) continue;
+
+      const status = (g.status ?? null) as string | null;
+      const period = (g.period ?? g.currentPeriod ?? null) as number | null;
+      const clock = (g.clock ?? g.currentClock ?? null) as string | null;
+
+      result.set(id, { status, period, clock });
+    }
+  } catch (err) {
+    console.error('CFBD /scoreboard fetch threw (non-fatal)', err);
+  }
+
+  return result;
 }
 
 /**
