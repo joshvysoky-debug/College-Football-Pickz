@@ -113,6 +113,14 @@ export async function GET(request: NextRequest) {
       // pre-kickoff countdown or Final badge instead.
       const live = liveScoreboard.get(g.id);
 
+      // While a game is in progress, ESPN's scoreboard score (see
+      // fetchLiveScoreboard) is more current than CFBD's home_points/
+      // away_points, which isn't guaranteed to update play-by-play on a
+      // free-tier key. Once the game is no longer in the live map (i.e.
+      // it's final), CFBD's own points are the source of truth again.
+      const homePoints = live?.homePoints ?? g.home_points;
+      const awayPoints = live?.awayPoints ?? g.away_points;
+
       return {
         id: g.id,
         season: g.season,
@@ -121,8 +129,8 @@ export async function GET(request: NextRequest) {
         start_date: g.start_date,
         home_team_id: g.home_id,
         away_team_id: g.away_id,
-        home_points: g.home_points,
-        away_points: g.away_points,
+        home_points: homePoints,
+        away_points: awayPoints,
         completed: g.completed,
         winner_team_id: g.completed
           ? (g.home_points ?? 0) > (g.away_points ?? 0)
