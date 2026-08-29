@@ -194,55 +194,96 @@ export async function fetchSpRanks(year: number): Promise<Map<string, number>> {
   return ranks;
 }
 
+const ESPN_SCOREBOARD_URL =
+  'https://site.api.espn.com/apis/site/v2/sports/football/college-football/scoreboard?limit=1000';
+
 /**
- * Maps game id -> live in-progress state (status/period/clock), sourced
- * from CFBD's live scoreboard endpoint.
- *
- * This is a *separate* endpoint from /games: /games only ever reflects
- * scheduled-vs-completed state (final score, `completed` flag), it never
- * carries an in-progress quarter/clock. /scoreboard is what has that, but
- * it's a live-tier CFBD feature — on some API plans it may return an empty
- * list or a 403 outside of your plan's access. Treat it as best-effort:
- * on any failure, log and return an empty map so the sync as a whole still
- * succeeds and the UI just falls back to its pre-kickoff countdown.
- *
- * NOTE: this hasn't been exercised against a live Saturday yet. If the
- * field names below don't match what your CFBD plan actually returns,
- * open a browser to
- *   https://api.collegefootballdata.com/scoreboard?classification=fbs
- * (with your API key) mid-game and compare — the aliasing below tries
- * both the documented GraphQL-style names (currentPeriod/currentClock)
- * and plainer REST-style ones (period/clock) defensively, the same way
- * fetchGames() aliases camelCase vs snake_case.
+ * Loosely normalizes a school name for matching CFBD's team names against
+ * ESPN's: strips diacritics (CFBD/ESPN don't always agree on "San José
+ * State" vs "San Jose State"), lowercases, and drops everything but
+ * letters/digits (so "Texas A&M", "Texas A&amp;M", "Texas AM" all collapse
+ * to the same key). Not bulletproof, but good enough for a best-effort
+ * live badge — a missed match just means that one game keeps showing the
+ * pre-kickoff countdown instead of a quarter/clock.
  */
-export async function fetchLiveScoreboard(): Promise<Map<number, CfbdLiveStatus>> {
+function normalizeTeamName(name: string): string {
+  return name
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]/g, '');
+}
+
+/**
+ * Maps game id -> live in-progress state (status/period/clock).
+ *
+ * CFBD's own live scoreboard endpoint (`/scoreboard`) requires a Patreon
+ * Tier 1+ subscription and returns 401 on a free-tier key — confirmed
+ * against the real API. This uses ESPN's public, unauthenticated
+ * scoreboard endpoint instead, which is undocumented but has no key
+ * requirement and returns the same kind of live period/clock/status data.
+ *
+ * ESPN uses its own game and team ids, not CFBD's, so games are matched by
+ * normalized home/away school name rather than id. Only games ESPN reports
+ * as actually in progress (`state === 'in'`) get an entry — pre-kickoff and
+ * final games are left for the caller's existing countdown/Final handling,
+ * since ESPN's pre-game period/clock are just placeholder zeros.
+ *
+ * Best-effort throughout: since this is an unofficial endpoint that could
+ * change shape or disappear without notice, any failure is logged and
+ * swallowed so the rest of the sync still succeeds.
+ */
+export async function fetchLiveScoreboard(
+  games: Pick<CfbdGame, 'id' | 'home_team' | 'away_team'>[]
+): Promise<Map<number, CfbdLiveStatus>> {
   const result = new Map<number, CfbdLiveStatus>();
+  if (games.length === 0) return result;
 
   try {
-    const res = await fetch(`${CFBD_BASE}/scoreboard?classification=fbs`, {
-      headers: authHeaders(),
-      cache: 'no-store',
-    });
+    const res = await fetch(ESPN_SCOREBOARD_URL, { cache: 'no-store' });
 
     if (!res.ok) {
-      console.error(`CFBD /scoreboard failed: ${res.status} ${await res.text()}`);
+      console.error(`ESPN scoreboard failed: ${res.status} ${await res.text()}`);
       return result;
     }
 
     const raw = await res.json();
+    const events = (raw.events ?? []) as Array<Record<string, unknown>>;
 
-    for (const g of raw as Array<Record<string, unknown>>) {
-      const id = g.id as number | undefined;
-      if (id === undefined) continue;
+    // Build a lookup of normalized "home|away" -> live status, from every
+    // in-progress event ESPN is currently reporting.
+    const liveByTeamPair = new Map<string, CfbdLiveStatus>();
 
-      const status = (g.status ?? null) as string | null;
-      const period = (g.period ?? g.currentPeriod ?? null) as number | null;
-      const clock = (g.clock ?? g.currentClock ?? null) as string | null;
+    for (const event of events) {
+      const competition = (event.competitions as Array<Record<string, unknown>> | undefined)?.[0];
+      if (!competition) continue;
 
-      result.set(id, { status, period, clock });
+      const status = competition.status as Record<string, unknown> | undefined;
+      const type = status?.type as Record<string, unknown> | undefined;
+      if (type?.state !== 'in') continue; // only care about live games
+
+      const competitors = competition.competitors as
+        | Array<{ homeAway: string; team?: { location?: string } }>
+        | undefined;
+      const home = competitors?.find((c) => c.homeAway === 'home')?.team?.location;
+      const away = competitors?.find((c) => c.homeAway === 'away')?.team?.location;
+      if (!home || !away) continue;
+
+      const key = `${normalizeTeamName(home)}|${normalizeTeamName(away)}`;
+      liveByTeamPair.set(key, {
+        status: (type?.name ?? null) as string | null,
+        period: (status?.period ?? null) as number | null,
+        clock: (status?.displayClock ?? null) as string | null,
+      });
+    }
+
+    for (const g of games) {
+      const key = `${normalizeTeamName(g.home_team)}|${normalizeTeamName(g.away_team)}`;
+      const live = liveByTeamPair.get(key);
+      if (live) result.set(g.id, live);
     }
   } catch (err) {
-    console.error('CFBD /scoreboard fetch threw (non-fatal)', err);
+    console.error('ESPN scoreboard fetch threw (non-fatal)', err);
   }
 
   return result;
