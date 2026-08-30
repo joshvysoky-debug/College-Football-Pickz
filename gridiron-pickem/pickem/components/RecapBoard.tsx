@@ -160,7 +160,14 @@ function TeamLabel({ team }: { team: { school: string; logo_url: string | null }
   return (
     <span className="flex items-center gap-1.5 text-chalk">
       {team.logo_url && (
-        <Image src={team.logo_url} alt="" width={18} height={18} className="h-[18px] w-[18px] object-contain" />
+        <Image
+          src={team.logo_url}
+          alt=""
+          width={18}
+          height={18}
+          unoptimized
+          className="h-[18px] w-[18px] object-contain"
+        />
       )}
       {team.school}
     </span>
