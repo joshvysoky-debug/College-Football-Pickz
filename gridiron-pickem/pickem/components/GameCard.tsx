@@ -213,6 +213,7 @@ function TeamRow({
             alt=""
             width={28}
             height={28}
+            unoptimized
             className="h-7 w-7 object-contain"
           />
         )}
