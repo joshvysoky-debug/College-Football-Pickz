@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import Image from 'next/image';
 import type { PickOutcome } from '@/lib/scoring';
 import type { RecapPickRow, UserWeekRecap, WeekGameRow } from '@/lib/weeklyRecap';
@@ -44,6 +44,15 @@ export default function RecapBoard({
   games: WeekGameRow[];
 }) {
   const [expandedGameId, setExpandedGameId] = useState<number | null>(null);
+
+  // Drives the kickoff-lock check below. Re-checked every 30s so a game
+  // that kicks off while someone has the Recap page open unlocks on its
+  // own, without needing a refresh (same pattern as Countdown.tsx).
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const id = setInterval(() => setNow(Date.now()), 30_000);
+    return () => clearInterval(id);
+  }, []);
 
   // Everyone already comes down in `recaps`, so "everyone's picks for this
   // game" is just a regroup of data already on the page — no extra fetch.
@@ -105,6 +114,7 @@ export default function RecapBoard({
           games.map((g) => {
             const isExpanded = expandedGameId === g.gameId;
             const entries = entriesByGame.get(g.gameId) ?? [];
+            const kickedOff = now >= new Date(g.startDate).getTime();
 
             return (
               <div key={g.gameId} className="border-b border-field-line/60 last:border-b-0">
@@ -121,13 +131,17 @@ export default function RecapBoard({
                     <TeamLabel team={g.home} />
                   </span>
                   <span className="font-score text-[11px] uppercase tracking-widest text-muted">
-                    {g.completed ? 'Final' : 'Upcoming'}
+                    {g.completed ? 'Final' : kickedOff ? 'Upcoming' : 'Locked'}
                   </span>
                 </button>
 
                 {isExpanded && (
                   <div className="space-y-1.5 bg-field-night/40 px-5 py-3">
-                    {entries.length === 0 ? (
+                    {!kickedOff ? (
+                      <p className="font-score text-xs uppercase tracking-widest text-muted">
+                        Picks are hidden until kickoff.
+                      </p>
+                    ) : entries.length === 0 ? (
                       <p className="font-score text-xs text-muted">No one has picked this game yet.</p>
                     ) : (
                       entries.map((e) => (
