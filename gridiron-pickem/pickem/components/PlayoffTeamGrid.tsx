@@ -99,6 +99,7 @@ export default function PlayoffTeamGrid({
                       alt=""
                       width={24}
                       height={24}
+                      unoptimized
                       className="h-6 w-6 shrink-0 object-contain"
                     />
                   )}
