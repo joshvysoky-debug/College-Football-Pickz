@@ -124,24 +124,17 @@ export async function GET(request: NextRequest) {
     // never revert that — only take over as the authoritative record once
     // CFBD's own data agrees the game is over. Pulling the current DB
     // state first is what makes that check possible.
-    const gameIds = games.map((g) => g.id);
-    const { data: existingRows, error: existingError } =
-      gameIds.length > 0
-        ? await supabase
-            .from('games')
-            .select('id, completed, winner_team_id, home_points, away_points, overtime, live_status, period, clock')
-            .in('id', gameIds)
-        : { data: [] as Array<{
-            id: number;
-            completed: boolean;
-            winner_team_id: number | null;
-            home_points: number | null;
-            away_points: number | null;
-            overtime: boolean;
-            live_status: string | null;
-            period: number | null;
-            clock: string | null;
-          }>, error: null };
+    //
+    // Scoped by season rather than `.in('id', gameIds)` — now that this
+    // fetches the whole season in one pass, gameIds runs to ~800 entries,
+    // and embedding all of them in the query URL exceeds Postgrest's URL
+    // length limit and gets rejected outright as a 400 Bad Request. A
+    // season easily fits under Supabase's default row cap, so this is
+    // just as complete without hitting that limit.
+    const { data: existingRows, error: existingError } = await supabase
+      .from('games')
+      .select('id, completed, winner_team_id, home_points, away_points, overtime, live_status, period, clock')
+      .eq('season', season);
     if (existingError) throw existingError;
     const existingById = new Map((existingRows ?? []).map((r) => [r.id, r]));
 
