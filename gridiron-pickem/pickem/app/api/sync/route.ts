@@ -7,8 +7,9 @@ import {
   fetchSpRanks,
   fetchLiveScoreboard,
   fetchActualPlayoffField,
+  fetchEspnWeeks,
+  getWeekForDate,
   currentSeasonAndWeek,
-  determineCurrentWeek,
 } from '@/lib/cfbd';
 
 export const dynamic = 'force-dynamic';
@@ -33,25 +34,31 @@ export async function GET(request: NextRequest) {
   const { season } = currentSeasonAndWeek();
 
   try {
-    // Ask CFBD's own calendar which week is "current", rather than
-    // assuming every week is a fixed 7 days long (see
-    // determineCurrentWeek's comment in lib/cfbd.ts for why that
-    // assumption broke this year's Week 1).
-    const week = await determineCurrentWeek(season);
-
-    // Pull this week, last week (in case of a late finish still needing
-    // grading), and next week (so its games/rankings/etc. are already in
-    // the database — and therefore pickable — before any of them kick
-    // off, since `week` only advances once this week's games have
-    // actually started).
-    const [teams, thisWeek, lastWeek, nextWeek, top25, spRanks] = await Promise.all([
+    // ESPN's calendar defines what "week" means here (see fetchEspnWeeks'
+    // comment in lib/cfbd.ts — CFBD's own per-game week field doesn't
+    // match it). Also fetch the CFBD schedule for the *entire* regular
+    // season in one call (omitting `week` — CFBD's /games endpoint
+    // returns the whole season's games without it) rather than pulling
+    // week-by-week: since our own week boundaries don't line up with
+    // CFBD's, filtering by CFBD's week number could miss games that
+    // belong in a given ESPN week. Every game gets (re-)bucketed into our
+    // own week number below, from its actual start_date.
+    const [espnWeeks, teams, seasonGames, spRanks] = await Promise.all([
+      fetchEspnWeeks(season),
       fetchTeams(season),
-      fetchGames({ year: season, week }),
-      week > 1 ? fetchGames({ year: season, week: week - 1 }) : Promise.resolve([]),
-      fetchGames({ year: season, week: week + 1 }),
-      fetchTop25({ year: season, week }),
+      fetchGames({ year: season, seasonType: 'regular' }),
       fetchSpRanks(season),
     ]);
+
+    const currentWeek = getWeekForDate(espnWeeks, new Date());
+
+    // AP Top 25 is still fetched per-week from CFBD (there's no
+    // whole-season version of this endpoint), using CFBD's own week
+    // numbering — since that can lag/lead our ESPN-based numbering by a
+    // week or two early in the season, this is a best-effort input to the
+    // "featured game" flag below, not to any bylaws scoring math (which
+    // relies on the season-wide SP+ ranks instead).
+    const top25 = await fetchTop25({ year: season, week: currentWeek });
 
     const teamRows = teams.map((t) => ({
       id: t.id,
@@ -64,7 +71,7 @@ export async function GET(request: NextRequest) {
 
     const knownTeamIds = new Set(teamRows.map((t) => t.id));
 
-    const games = [...lastWeek, ...thisWeek, ...nextWeek];
+    const games = seasonGames;
 
     // Needs the actual games list (for team-name matching against ESPN's
     // scoreboard) so this can't join the Promise.all above — it has to run
@@ -175,7 +182,10 @@ export async function GET(request: NextRequest) {
       return {
         id: g.id,
         season: g.season,
-        week: g.week,
+        // Our own week bucket, derived from ESPN's calendar and this
+        // game's actual kickoff — not CFBD's g.week (see fetchEspnWeeks'
+        // comment in lib/cfbd.ts for why those two numbers can differ).
+        week: getWeekForDate(espnWeeks, new Date(g.start_date)),
         season_type: g.season_type,
         start_date: g.start_date,
         home_team_id: g.home_id,
@@ -239,7 +249,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({
       ok: true,
       season,
-      week,
+      week: currentWeek,
       teamsSynced: teamRows.length,
       gamesSynced: gameRows.length,
       rankedSchoolsFound: top25.size,
