@@ -18,25 +18,36 @@ export default async function WeekPage({ params }: { params: { week: string } })
     data: { user },
   } = await supabase.auth.getUser();
 
-  const [{ data: games, error: gamesError }, { data: myPicks }] = await Promise.all([
-    supabase
-      .from('games')
-      .select('*')
-      .eq('season', season)
-      .eq('week', week)
-      .eq('featured', true)
-      .order('start_date', { ascending: true }),
-    user
-      ? supabase.from('picks').select('game_id, picked_team_id').eq('user_id', user.id)
-      : Promise.resolve({ data: [] as { game_id: number; picked_team_id: number }[] }),
-  ]);
+  const [{ data: games, error: gamesError }, { data: myPicks }, { data: weekDates }] =
+    await Promise.all([
+      supabase
+        .from('games')
+        .select('*')
+        .eq('season', season)
+        .eq('week', week)
+        .eq('featured', true)
+        .order('start_date', { ascending: true }),
+      user
+        ? supabase.from('picks').select('game_id, picked_team_id').eq('user_id', user.id)
+        : Promise.resolve({ data: [] as { game_id: number; picked_team_id: number }[] }),
+      // Unfiltered by `featured` — this is only for the "Aug 22 – Sep 7"
+      // header, which should reflect the whole week's real span, not just
+      // the ranked/SEC games actually rendered as cards below. A week with
+      // few (or no) featured games would otherwise show a too-narrow (or
+      // blank) date range even though plenty of games are being played.
+      supabase
+        .from('games')
+        .select('start_date')
+        .eq('season', season)
+        .eq('week', week),
+    ]);
 
   if (gamesError) {
     console.error('WeekPage: failed to load games', gamesError);
   }
 
   const pickByGame = new Map((myPicks ?? []).map((p) => [p.game_id, p.picked_team_id]));
-  const dateRange = formatWeekDateRange((games ?? []).map((g) => g.start_date));
+  const dateRange = formatWeekDateRange((weekDates ?? []).map((g) => g.start_date));
 
   // Records + last week's results for every team playing this week.
   const gameTeamIds = Array.from(
