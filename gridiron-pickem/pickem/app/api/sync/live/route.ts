@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import { createServiceClient } from '@/lib/supabase/server';
 import { fetchLiveScoreboard, currentSeasonAndWeek } from '@/lib/cfbd';
+import { getDisplayWeek } from '@/lib/currentWeek';
 
 export const dynamic = 'force-dynamic';
 
@@ -42,9 +43,16 @@ export async function GET(request: NextRequest) {
   }
 
   const supabase = createServiceClient();
-  const { season, week } = currentSeasonAndWeek();
+  const { season } = currentSeasonAndWeek();
 
   try {
+    // Which week to check is read straight from our own already-synced
+    // games (same logic the "This Week" page uses, see
+    // lib/currentWeek.ts) rather than CFBD's calendar — this route is
+    // deliberately zero-CFBD-calls so it can run every couple of minutes
+    // without touching CFBD's monthly budget.
+    const week = await getDisplayWeek(supabase, season);
+
     // Only bother pinging ESPN for games that aren't already final — a
     // completed game can't still be "in progress" on ESPN's scoreboard,
     // and skipping them keeps this from ever touching a graded game.
