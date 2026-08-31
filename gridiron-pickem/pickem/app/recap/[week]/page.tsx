@@ -13,23 +13,34 @@ export default async function RecapWeekPage({ params }: { params: { week: string
   const { season } = currentSeasonAndWeek();
   const supabase = createClient();
 
-  const [{ data: games, error: gamesError }, { data: profiles }] = await Promise.all([
-    supabase
-      .from('games')
-      .select('*')
-      .eq('season', season)
-      .eq('week', week)
-      .eq('featured', true)
-      .order('start_date', { ascending: true }),
-    supabase.from('profiles').select('id, display_name'),
-  ]);
+  const [{ data: games, error: gamesError }, { data: profiles }, { data: weekDates }] =
+    await Promise.all([
+      supabase
+        .from('games')
+        .select('*')
+        .eq('season', season)
+        .eq('week', week)
+        .eq('featured', true)
+        .order('start_date', { ascending: true }),
+      supabase.from('profiles').select('id, display_name'),
+      // Unfiltered by `featured` — this is only for the "Aug 22 – Sep 7"
+      // header, which should reflect the whole week's real span, not just
+      // the ranked/SEC games actually recapped below. A week with few (or
+      // no) featured games would otherwise show a too-narrow (or blank)
+      // date range even though plenty of games were played that week.
+      supabase
+        .from('games')
+        .select('start_date')
+        .eq('season', season)
+        .eq('week', week),
+    ]);
 
   if (gamesError) {
     console.error('RecapWeekPage: failed to load games', gamesError);
   }
 
   const gameIds = (games ?? []).map((g) => g.id);
-  const dateRange = formatWeekDateRange((games ?? []).map((g) => g.start_date));
+  const dateRange = formatWeekDateRange((weekDates ?? []).map((g) => g.start_date));
 
   // RLS naturally keeps everyone's picks secret before a game locks, same
   // as the Picks page — recap rows will just be empty for weeks in progress.
