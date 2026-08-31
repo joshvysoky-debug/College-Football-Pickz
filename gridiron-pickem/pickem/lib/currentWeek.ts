@@ -1,36 +1,40 @@
 import type { createClient, createServiceClient } from '@/lib/supabase/server';
+import { fetchEspnWeeks, getWeekForDate } from '@/lib/cfbd';
 
 type SupabaseServerClient = ReturnType<typeof createClient> | ReturnType<typeof createServiceClient>;
 
 /**
  * Which week to send someone to when they land on "/" (This Week) or
- * "/recap" with no week specified.
+ * "/recap" with no week specified — and also which week the sync routes
+ * treat as "current" for their own purposes (see both sync route files).
  *
- * `currentSeasonAndWeek()` in lib/cfbd.ts is a fixed calendar formula
- * (hardcoded Aug 24 season start, 7-day buckets). That formula is fine for
- * its actual job — telling the sync routes which week of fresh CFBD/ESPN
- * data to keep pulling forward — because sync just keeps every week's
- * games around forever once fetched; being a day early or late to start
- * pulling a new week is harmless.
+ * Primary source: ESPN's own regular-season week calendar (see
+ * `fetchEspnWeeks` in lib/cfbd.ts) — the real, sometimes irregular-length
+ * week boundaries the group actually means by "Week 1", "Week 2", etc.
+ * (CFBD's own per-game `week` field doesn't match this — see that
+ * function's comment for why relying on CFBD's numbering broke Week 1.)
  *
- * It's the wrong tool for deciding what a person *sees*, though: it has no
- * relationship to any actual kickoff. As soon as "now" crosses its
- * hardcoded boundary, "/" jumps to the next week even if that week's games
- * haven't been played (or even started) yet — which is exactly what made
- * Week 1's games disappear from "This Week" a couple of days after they
- * were played, while Week 2's games were still days away.
- *
- * Instead, derive the displayed week from games that actually exist in
- * the `games` table: the current week is the highest week number that has
- * at least one game whose kickoff has already passed. That keeps "This
- * Week" pinned on Week 1 all the way through the weekend and into the
- * following week, until Week 2's own games start kicking off — whatever
- * real dates those happen to fall on.
+ * Fallback: if ESPN's endpoint is unreachable or returns nothing, fall
+ * back to deriving the week from games already in our own `games` table
+ * — the highest week number that has at least one game whose kickoff has
+ * already passed. This is a looser approximation (it can't know about a
+ * new week before something in it has actually started), but it keeps
+ * "This Week" working rather than failing outright if ESPN's undocumented
+ * endpoint ever goes down or changes shape.
  */
 export async function getDisplayWeek(
   supabase: SupabaseServerClient,
   season: number
 ): Promise<number> {
+  try {
+    const weeks = await fetchEspnWeeks(season);
+    if (weeks.length > 0) {
+      return getWeekForDate(weeks, new Date());
+    }
+  } catch (err) {
+    console.error('getDisplayWeek: ESPN calendar fetch failed, falling back to DB', err);
+  }
+
   const { data, error } = await supabase
     .from('games')
     .select('week')
