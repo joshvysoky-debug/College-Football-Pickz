@@ -390,104 +390,83 @@ export async function fetchActualPlayoffField(year: number): Promise<number[]> {
  * are named for the year they're played in, and that never needs
  * "current week"-style guesswork the way week numbers do.
  *
- * This used to also return a `week`, computed from a fixed Aug 24
- * start-date and rigid 7-day buckets. That formula is gone: it assumed
- * every CFB week is exactly 7 days long, which isn't true — CFBD's own
- * week boundaries are irregular, and this year's Week 1 in particular
- * spans two full weekends (every season-opening game from late August
- * through Labor Day is Week 1 to CFBD; there's no separate "Week 0"
- * bucket). A fixed 7-day formula rolled over to "Week 2" days before
- * Week 1's second weekend had even been played, which is what made that
- * weekend's games disappear from the app.
- *
- * Callers that need an actual week number now have two options, depending
- * on what the week number is for:
- *   - What to show a person (the "This Week" and recap landing pages):
- *     `getDisplayWeek` in lib/currentWeek.ts, which reads the real,
- *     already-synced per-game week values straight out of our own
- *     `games` table. Free, and correct by construction no matter how
- *     long any given week runs.
- *   - Which week of fresh data to keep pulling from CFBD (the sync
- *     routes): `determineCurrentWeek` below, which asks CFBD's own
- *     `/calendar` endpoint for its real week boundaries instead of
- *     guessing at them locally.
+ * This used to also return a `week`, first computed from a fixed Aug 24
+ * start-date and rigid 7-day buckets, then later from CFBD's own
+ * per-game week numbering. Both are gone now: CFBD's week boundaries
+ * don't match what the group (or ESPN) actually mean by "Week 1" — see
+ * `fetchEspnWeeks` below, which is now the one place "week" is defined
+ * for this whole app. Both the display pages (via `getDisplayWeek` in
+ * lib/currentWeek.ts) and the sync routes read from it.
  */
 export function currentSeasonAndWeek(now = new Date()): { season: number } {
   return { season: now.getUTCFullYear() };
 }
 
-export type CfbdCalendarWeek = {
-  week: number;
-  seasonType: string;
-  firstGameStart: string;
-  lastGameStart: string;
+export type EspnWeek = {
+  number: number;
+  startDate: string;
+  endDate: string;
 };
 
 /**
- * CFBD's own week-boundary calendar for a season — the same authoritative
- * source that assigns each game's `week` field in the first place, so it
- * reflects CFBD's real (and sometimes irregular-length) week grouping
- * rather than an assumed fixed cadence.
+ * ESPN's own regular-season week boundaries for a year — the same
+ * calendar that drives espn.com's schedule and scoreboard week groupings,
+ * fetched from ESPN's (undocumented but free, no-key) seasons endpoint.
+ *
+ * This app used to trust CFBD's own per-game `week` field for grouping
+ * games into weeks. That turned out to be wrong: CFBD's internal week
+ * numbering doesn't match ESPN's (or the group's) — for the 2026 season,
+ * CFBD calls only Sept 3-6 "Week 1", while ESPN (and everyone actually
+ * watching the sport) calls Aug 22 - Sep 7 "Week 1", folding in every
+ * season-opening game rather than giving them a separate "Week 0". Since
+ * "Week 1" needs to mean what the group actually means by it, ESPN's
+ * calendar — not CFBD's week field — is now the definition this app uses;
+ * see determineOurWeek below for how each game gets bucketed by it.
  */
-export async function fetchCalendar(
-  year: number,
-  seasonType: 'regular' | 'postseason' = 'regular'
-): Promise<CfbdCalendarWeek[]> {
-  const params = new URLSearchParams({ year: String(year), seasonType });
-
-  const res = await fetch(`${CFBD_BASE}/calendar?${params.toString()}`, {
-    headers: authHeaders(),
-    // Week boundaries for a season are set well in advance and don't
-    // change; safe to cache for a while rather than refetch every sync.
-    next: { revalidate: 60 * 60 * 12 },
-  });
+export async function fetchEspnWeeks(year: number): Promise<EspnWeek[]> {
+  const res = await fetch(
+    `https://site.api.espn.com/apis/common/v3/sports/football/college-football/seasons?startingseason=${year}`,
+    { next: { revalidate: 60 * 60 * 12 } }
+  );
 
   if (!res.ok) {
-    throw new Error(`CFBD /calendar failed: ${res.status} ${await res.text()}`);
+    throw new Error(`ESPN seasons failed: ${res.status} ${await res.text()}`);
   }
 
   const raw = await res.json();
-  return (raw as Array<Record<string, unknown>>).map((w) => ({
-    week: w.week as number,
-    seasonType: (w.seasonType ?? w.season_type) as string,
-    firstGameStart: (w.firstGameStart ?? w.first_game_start) as string,
-    lastGameStart: (w.lastGameStart ?? w.last_game_start) as string,
+  const seasons = (raw.seasons ?? []) as Array<Record<string, unknown>>;
+  const season = seasons.find((s) => s.year === year);
+  if (!season) return [];
+
+  const types = (season.types ?? []) as Array<Record<string, unknown>>;
+  // ESPN's schema: type 1 = Preseason, 2 = Regular Season, 3 = Postseason,
+  // 4 = Off Season. Only the regular season's weeks apply here — postseason
+  // games are handled separately (see fetchActualPlayoffField).
+  const regular = types.find((t) => t.type === 2);
+  if (!regular) return [];
+
+  const weeks = (regular.weeks ?? []) as Array<Record<string, unknown>>;
+  return weeks.map((w) => ({
+    number: w.number as number,
+    startDate: w.startDate as string,
+    endDate: w.endDate as string,
   }));
 }
 
 /**
- * The regular-season week CFBD itself would call "current" right now —
- * i.e. the highest week whose `firstGameStart` has already passed.
- *
- * This is what decides which week(s) of fresh CFBD data the *sync* routes
- * keep pulling forward — it is deliberately NOT used to decide what a
- * person sees (that's `getDisplayWeek`, see lib/currentWeek.ts), because
- * this can and should tick over to a new week before any of that week's
- * games have actually been played — that's what gives the sync routes
- * enough lead time to have a future week's games, rankings, etc. sitting
- * in the database before anyone needs to look at or pick them.
- *
- * Only ever called from the twice-a-day heavy sync (`/api/sync`), not the
- * every-couple-minutes live sync — this makes one CFBD call, and the live
- * sync is deliberately zero-CFBD-calls (see its own file comment).
- *
- * Falls back to week 1 before the season's first game. Doesn't currently
- * distinguish "the regular season just ended" from "still in it" — once
- * the last regular-season week's `firstGameStart` has passed, this keeps
- * returning that week, which is fine for this app's purposes (postseason
- * games are handled separately, see fetchActualPlayoffField).
+ * Which of `weeks` a given date falls in, by ESPN's own boundaries.
+ * Falls back to the first week if `date` is before the season, and the
+ * last known week if after (this app doesn't track postseason weeks).
  */
-export async function determineCurrentWeek(year: number, now = new Date()): Promise<number> {
-  const weeks = await fetchCalendar(year, 'regular');
+export function getWeekForDate(weeks: EspnWeek[], date: Date): number {
   if (weeks.length === 0) return 1;
+  const sorted = [...weeks].sort((a, b) => a.number - b.number);
 
-  const sorted = [...weeks].sort((a, b) => a.week - b.week);
-
-  let current = sorted[0].week;
   for (const w of sorted) {
-    if (now >= new Date(w.firstGameStart)) {
-      current = w.week;
+    if (date >= new Date(w.startDate) && date <= new Date(w.endDate)) {
+      return w.number;
     }
   }
-  return current;
+  if (date < new Date(sorted[0].startDate)) return sorted[0].number;
+  return sorted[sorted.length - 1].number;
 }
