@@ -8,6 +8,7 @@ import {
   fetchLiveScoreboard,
   fetchActualPlayoffField,
   currentSeasonAndWeek,
+  determineCurrentWeek,
 } from '@/lib/cfbd';
 
 export const dynamic = 'force-dynamic';
@@ -29,13 +30,25 @@ export async function GET(request: NextRequest) {
   }
 
   const supabase = createServiceClient();
-  const { season, week } = currentSeasonAndWeek();
+  const { season } = currentSeasonAndWeek();
 
   try {
-    const [teams, thisWeek, lastWeek, top25, spRanks] = await Promise.all([
+    // Ask CFBD's own calendar which week is "current", rather than
+    // assuming every week is a fixed 7 days long (see
+    // determineCurrentWeek's comment in lib/cfbd.ts for why that
+    // assumption broke this year's Week 1).
+    const week = await determineCurrentWeek(season);
+
+    // Pull this week, last week (in case of a late finish still needing
+    // grading), and next week (so its games/rankings/etc. are already in
+    // the database — and therefore pickable — before any of them kick
+    // off, since `week` only advances once this week's games have
+    // actually started).
+    const [teams, thisWeek, lastWeek, nextWeek, top25, spRanks] = await Promise.all([
       fetchTeams(season),
       fetchGames({ year: season, week }),
       week > 1 ? fetchGames({ year: season, week: week - 1 }) : Promise.resolve([]),
+      fetchGames({ year: season, week: week + 1 }),
       fetchTop25({ year: season, week }),
       fetchSpRanks(season),
     ]);
@@ -51,7 +64,7 @@ export async function GET(request: NextRequest) {
 
     const knownTeamIds = new Set(teamRows.map((t) => t.id));
 
-    const games = [...lastWeek, ...thisWeek];
+    const games = [...lastWeek, ...thisWeek, ...nextWeek];
 
     // Needs the actual games list (for team-name matching against ESPN's
     // scoreboard) so this can't join the Promise.all above — it has to run
