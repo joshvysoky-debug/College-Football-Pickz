@@ -44,6 +44,7 @@ export default function RecapBoard({
   games: WeekGameRow[];
 }) {
   const [expandedGameId, setExpandedGameId] = useState<number | null>(null);
+  const [expandedUserId, setExpandedUserId] = useState<string | null>(null);
 
   // Drives the kickoff-lock check below. Re-checked every 30s so a game
   // that kicks off while someone has the Recap page open unlocks on its
@@ -90,16 +91,70 @@ export default function RecapBoard({
         {recaps.length === 0 ? (
           <p className="px-5 py-6 text-sm text-muted">No players yet.</p>
         ) : (
-          recaps.map((r, i) => (
-            <div
-              key={r.userId}
-              className="grid grid-cols-[auto_1fr_auto] items-center gap-x-4 border-b border-field-line/60 px-5 py-3 last:border-b-0"
-            >
-              <span className="font-score text-sm tabular text-bulb">{String(i + 1).padStart(2, '0')}</span>
-              <span className="font-display text-lg tracking-wide text-chalk">{r.name}</span>
-              <span className="text-right font-score text-lg tabular text-chalk">{r.weekPoints}</span>
-            </div>
-          ))
+          recaps.map((r, i) => {
+            const isExpanded = expandedUserId === r.userId;
+            return (
+              <div key={r.userId} className="border-b border-field-line/60 last:border-b-0">
+                <button
+                  type="button"
+                  onClick={() => setExpandedUserId(isExpanded ? null : r.userId)}
+                  className={`grid w-full grid-cols-[auto_1fr_auto] items-center gap-x-4 px-5 py-3 text-left transition ${
+                    isExpanded ? 'bg-field-night/50' : 'hover:bg-field-night/30'
+                  }`}
+                >
+                  <span className="font-score text-sm tabular text-bulb">{String(i + 1).padStart(2, '0')}</span>
+                  <span>
+                    <span className="font-display text-lg tracking-wide text-chalk">{r.name}</span>
+                    <span className="ml-2 font-score text-xs tabular text-muted">
+                      {r.correctPicks}/{r.totalCompletedPicks} correct
+                    </span>
+                  </span>
+                  <span className="text-right font-score text-lg tabular text-chalk">{r.weekPoints}</span>
+                </button>
+
+                {isExpanded && (
+                  <div className="space-y-1.5 bg-field-night/40 px-5 py-3">
+                    {r.picks.length === 0 ? (
+                      <p className="font-score text-xs text-muted">No featured games this week.</p>
+                    ) : (
+                      r.picks.map((p) => {
+                        // Same kickoff gate as the Games section below, applied
+                        // here per-pick since a player's picks span every game
+                        // in the week, each with its own lock time.
+                        const kickedOff = now >= new Date(p.startDate).getTime();
+                        return (
+                          <div key={p.gameId} className="flex items-center justify-between font-score text-xs">
+                            <span className="flex items-center gap-2 text-chalk">
+                              <TeamLabel team={p.away} />
+                              <span className="text-muted">@</span>
+                              <TeamLabel team={p.home} />
+                            </span>
+                            {!kickedOff ? (
+                              <span className="font-score text-[11px] uppercase tracking-widest text-muted">
+                                Locked
+                              </span>
+                            ) : (
+                              <span className="flex items-center gap-3">
+                                <span className="text-chalk">{p.pickedTeam ? p.pickedTeam.school : '—'}</span>
+                                <span
+                                  className={`w-24 text-right uppercase tracking-widest ${OUTCOME_STYLE[p.outcome]}`}
+                                >
+                                  {p.pickedTeam ? OUTCOME_LABEL[p.outcome] : 'No Pick'}
+                                </span>
+                                <span className="w-8 text-right tabular text-muted">
+                                  {p.completed ? `+${p.points}` : '—'}
+                                </span>
+                              </span>
+                            )}
+                          </div>
+                        );
+                      })
+                    )}
+                  </div>
+                )}
+              </div>
+            );
+          })
         )}
       </div>
 
