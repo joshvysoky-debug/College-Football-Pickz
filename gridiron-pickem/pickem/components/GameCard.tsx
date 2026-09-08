@@ -13,7 +13,14 @@ import type { Game, Team } from '@/lib/database.types';
 type TeamSide = {
   team: Team;
   points: number | null;
+  /** This team's AP Top 25 rank as of the week being viewed (or null if unranked then). */
   rank: number | null;
+  /**
+   * This team's most recent known AP Top 25 rank (or null if currently
+   * unranked), regardless of which week is being viewed. Only rendered
+   * when it differs from `rank`, so it's a no-op on the current week.
+   */
+  currentRank?: number | null;
   record?: string;
   lastWeek?: LastWeekResult;
 };
@@ -223,6 +230,11 @@ function TeamRow({
               {side.rank !== null && <span className="text-bulb">#{side.rank} </span>}
               {side.team.school}
             </span>
+            {side.currentRank !== undefined && side.currentRank !== side.rank && (
+              <span className="font-score text-[10px] uppercase tracking-widest text-muted">
+                now {side.currentRank !== null ? `#${side.currentRank}` : 'NR'}
+              </span>
+            )}
             {side.record && (
               <span className="font-score text-xs text-muted">{side.record}</span>
             )}
