@@ -18,7 +18,7 @@ export default async function WeekPage({ params }: { params: { week: string } })
     data: { user },
   } = await supabase.auth.getUser();
 
-  const [{ data: games, error: gamesError }, { data: myPicks }, { data: weekDates }] =
+  const [{ data: games, error: gamesError }, { data: myPicks }, { data: weekDates }, { data: apRankingRows }] =
     await Promise.all([
       supabase
         .from('games')
@@ -40,10 +40,28 @@ export default async function WeekPage({ params }: { params: { week: string } })
         .select('start_date')
         .eq('season', season)
         .eq('week', week),
+      // The whole season's AP rankings history (see 005_ap_rankings.sql),
+      // used below to find each team's most recent rank — for comparison
+      // against whatever rank was actually stored on a past week's game.
+      supabase.from('ap_rankings').select('week, school, rank').eq('season', season),
     ]);
 
   if (gamesError) {
     console.error('WeekPage: failed to load games', gamesError);
+  }
+
+  // Most-recent rank per school, regardless of which CFBD week number it
+  // came from — just whichever row has the highest week number for that
+  // school. Used to show "(now #8)" next to a team's historical rank when
+  // looking at an older week.
+  const latestRankBySchool = new Map<string, number>();
+  const latestRankWeekBySchool = new Map<string, number>();
+  for (const r of apRankingRows ?? []) {
+    const priorWeek = latestRankWeekBySchool.get(r.school);
+    if (priorWeek === undefined || r.week > priorWeek) {
+      latestRankWeekBySchool.set(r.school, r.week);
+      latestRankBySchool.set(r.school, r.rank);
+    }
   }
 
   const pickByGame = new Map((myPicks ?? []).map((p) => [p.game_id, p.picked_team_id]));
@@ -189,12 +207,14 @@ export default async function WeekPage({ params }: { params: { week: string } })
                   team: home,
                   points: game.home_points,
                   rank: game.home_rank,
+                  currentRank: latestRankBySchool.get(home.school) ?? null,
                   ...teamStats.get(home.id),
                 }}
                 away={{
                   team: away,
                   points: game.away_points,
                   rank: game.away_rank,
+                  currentRank: latestRankBySchool.get(away.school) ?? null,
                   ...teamStats.get(away.id),
                 }}
                 myPick={pickByGame.get(game.id) ?? null}
