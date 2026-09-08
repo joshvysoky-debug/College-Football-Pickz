@@ -52,14 +52,6 @@ export async function GET(request: NextRequest) {
 
     const currentWeek = getWeekForDate(espnWeeks, new Date());
 
-    // AP Top 25 is still fetched per-week from CFBD (there's no
-    // whole-season version of this endpoint), using CFBD's own week
-    // numbering — since that can lag/lead our ESPN-based numbering by a
-    // week or two early in the season, this is a best-effort input to the
-    // "featured game" flag below, not to any bylaws scoring math (which
-    // relies on the season-wide SP+ ranks instead).
-    const top25 = await fetchTop25({ year: season, week: currentWeek });
-
     const teamRows = teams.map((t) => ({
       id: t.id,
       school: t.school,
@@ -138,9 +130,73 @@ export async function GET(request: NextRequest) {
     if (existingError) throw existingError;
     const existingById = new Map((existingRows ?? []).map((r) => [r.id, r]));
 
+    // AP Top 25 rankings, keyed by CFBD's own week number (g.week — not our
+    // ESPN-bucketed `week` column above), backed by the ap_rankings cache
+    // table (see 005_ap_rankings.sql). Once a given week's poll has been
+    // captured here, it's frozen — a later sync run must never overwrite a
+    // past week's rank with whatever the *current* week's poll says, which
+    // was the original bug (Week 1 game cards silently showing Week 6's
+    // rankings by Week 6).
+    const { data: existingRankingRows, error: existingRankingsError } = await supabase
+      .from('ap_rankings')
+      .select('week, school, rank')
+      .eq('season', season);
+    if (existingRankingsError) throw existingRankingsError;
+
+    const rankingsByWeek = new Map<number, Map<string, number>>();
+    for (const r of existingRankingRows ?? []) {
+      if (!rankingsByWeek.has(r.week)) rankingsByWeek.set(r.week, new Map());
+      rankingsByWeek.get(r.week)!.set(r.school, r.rank);
+    }
+    const capturedWeeks = new Set(rankingsByWeek.keys());
+
+    // Whichever CFBD week number(s) this ESPN-defined "current week" maps
+    // to — these are always refetched, since that poll can be brand new.
+    // Everything else only gets (re-)fetched if we've genuinely never
+    // captured it before (e.g. the poll wasn't released yet last time this
+    // ran) — past weeks' polls don't change once released, so there's no
+    // reason to keep spending a CFBD call on them every sync.
+    const currentEspnWeekBounds = espnWeeks.find((w) => w.number === currentWeek);
+    const currentCfbdWeeks = new Set(
+      currentEspnWeekBounds
+        ? games
+            .filter((g) => {
+              const d = new Date(g.start_date);
+              return (
+                d >= new Date(currentEspnWeekBounds.startDate) &&
+                d <= new Date(currentEspnWeekBounds.endDate)
+              );
+            })
+            .map((g) => g.week)
+        : []
+    );
+
+    const allCfbdWeeks = new Set(games.map((g) => g.week));
+    const weeksToFetch = [...allCfbdWeeks].filter(
+      (w) => currentCfbdWeeks.has(w) || !capturedWeeks.has(w)
+    );
+
+    const newRankingRows: { season: number; week: number; school: string; rank: number }[] = [];
+    for (const week of weeksToFetch) {
+      const fetched = await fetchTop25({ year: season, week });
+      // Empty can mean the poll genuinely isn't out yet (common early in a
+      // week) or the fetch itself failed — either way, leave capturedWeeks
+      // alone so the next sync run tries again instead of caching a blank.
+      if (fetched.size === 0) continue;
+      rankingsByWeek.set(week, fetched);
+      for (const [school, rank] of fetched) {
+        newRankingRows.push({ season, week, school, rank });
+      }
+    }
+
+    if (newRankingRows.length > 0) {
+      const { error } = await supabase.from('ap_rankings').upsert(newRankingRows);
+      if (error) throw error;
+    }
+
     const gameRows = games.map((g) => {
-      const homeRank = top25.get(g.home_team) ?? null;
-      const awayRank = top25.get(g.away_team) ?? null;
+      const homeRank = rankingsByWeek.get(g.week)?.get(g.home_team) ?? null;
+      const awayRank = rankingsByWeek.get(g.week)?.get(g.away_team) ?? null;
       const isRanked = homeRank !== null || awayRank !== null;
       const isSecMatchup =
         confByTeamId.get(g.home_id) === 'SEC' || confByTeamId.get(g.away_id) === 'SEC';
@@ -245,7 +301,8 @@ export async function GET(request: NextRequest) {
       week: currentWeek,
       teamsSynced: teamRows.length,
       gamesSynced: gameRows.length,
-      rankedSchoolsFound: top25.size,
+      apRankingWeeksFetched: weeksToFetch.length,
+      apRankingRowsWritten: newRankingRows.length,
       spRanksFound: spRanks.size,
       liveGamesFound: liveScoreboard.size,
       playoffFieldSynced,
