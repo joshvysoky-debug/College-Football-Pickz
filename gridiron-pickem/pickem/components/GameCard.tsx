@@ -238,10 +238,10 @@ function TeamRow({
             {side.record && (
               <span className="font-score text-xs text-muted">{side.record}</span>
             )}
-            {side.lastWeek?.kind === 'bye' && (
+            {!started && side.lastWeek?.kind === 'bye' && (
               <span className="font-score text-xs text-muted">Bye Week</span>
             )}
-            {side.lastWeek?.kind === 'result' && (
+            {!started && side.lastWeek?.kind === 'result' && (
               <span className="font-score text-xs text-muted">
                 <span className={side.lastWeek.won ? 'text-turf-bright' : 'text-miss'}>
                   {side.lastWeek.won ? 'W' : 'L'}
