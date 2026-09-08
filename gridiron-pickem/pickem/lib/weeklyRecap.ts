@@ -21,6 +21,8 @@ export type UserWeekRecap = {
   userId: string;
   name: string;
   weekPoints: number;
+  correctPicks: number;
+  totalCompletedPicks: number;
   picks: RecapPickRow[];
 };
 
@@ -88,6 +90,8 @@ export function buildWeeklyRecap({
 
   const recaps: UserWeekRecap[] = profiles.map((pr) => {
     let weekPoints = 0;
+    let correctPicks = 0;
+    let totalCompletedPicks = 0;
     const picksOut: RecapPickRow[] = [];
 
     for (const game of sortedGames) {
@@ -110,6 +114,12 @@ export function buildWeeklyRecap({
         if (result) {
           outcome = result.outcome;
           points = result.points;
+          totalCompletedPicks += 1;
+          // Same "correct" definition as lib/standings.ts: an OT loss still
+          // scores a consolation point but isn't a win, and no_pick never is.
+          if (outcome !== 'incorrect' && outcome !== 'ot_loss' && outcome !== 'no_pick') {
+            correctPicks += 1;
+          }
         }
       }
 
@@ -131,6 +141,8 @@ export function buildWeeklyRecap({
       userId: pr.id,
       name: pr.display_name?.trim() || 'Anonymous',
       weekPoints,
+      correctPicks,
+      totalCompletedPicks,
       picks: picksOut,
     };
   });
