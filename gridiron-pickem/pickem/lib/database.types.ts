@@ -42,6 +42,18 @@ export type Game = {
   clock: string | null;
 };
 
+/**
+ * One school's AP Top 25 rank for a given season/week, as captured
+ * permanently by the sync route the first time that week's poll was
+ * successfully fetched — see supabase/migrations/005_ap_rankings.sql.
+ */
+export type ApRanking = {
+  season: number;
+  week: number;
+  school: string;
+  rank: number;
+};
+
 export type Profile = {
   id: string;
   display_name: string | null;
@@ -105,6 +117,12 @@ export type Database = {
         Row: PlayoffFieldEntry;
         Insert: PlayoffFieldEntry;
         Update: Partial<PlayoffFieldEntry>;
+        Relationships: [];
+      };
+      ap_rankings: {
+        Row: ApRanking;
+        Insert: ApRanking;
+        Update: Partial<ApRanking>;
         Relationships: [];
       };
     };
