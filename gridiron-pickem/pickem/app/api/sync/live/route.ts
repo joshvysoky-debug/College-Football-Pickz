@@ -195,6 +195,14 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json({
       ok: true,
+      // Which Supabase project this deployment is actually pointed at —
+      // just the project ref, not a secret — so it can be compared
+      // directly against the ref shown in the Supabase dashboard's URL
+      // (supabase.com/dashboard/project/<ref>) without relying on
+      // copy-pasting env var values around.
+      supabaseProjectRef: (process.env.NEXT_PUBLIC_SUPABASE_URL ?? '')
+        .replace(/^https?:\/\//, '')
+        .split('.')[0] || null,
       checked: games.length,
       updated: updates.length - failed.length,
       unmatched: staleUnmatched,
