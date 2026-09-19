@@ -69,7 +69,7 @@ export async function GET(request: NextRequest) {
     // scoreboard) so this can't join the Promise.all above — it has to run
     // after `games` exists. See fetchLiveScoreboard's doc comment for why
     // this isn't a CFBD call.
-    const liveScoreboard = await fetchLiveScoreboard(games);
+    const { live: liveScoreboard } = await fetchLiveScoreboard(games);
 
     // CFBD's /teams endpoint (even filtered to division=fbs) only covers
     // that season's FBS roster. Games against FCS/lower-division opponents
