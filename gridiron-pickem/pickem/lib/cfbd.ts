@@ -70,7 +70,14 @@ export async function fetchGames(opts: {
 }): Promise<CfbdGame[]> {
   const params = new URLSearchParams({
     year: String(opts.year),
-    division: 'fbs',
+    // CFBD's /games endpoint filters classification via `classification`,
+    // not `division` — `division` isn't a real parameter for this
+    // endpoint and was being silently ignored, which meant every sync
+    // was pulling in every division nationwide (FCS, II, III) rather
+    // than just FBS. That's what inflated the games table with things
+    // like Division III NESCAC matchups that have nothing to do with
+    // this pick'em group.
+    classification: 'fbs',
     seasonType: opts.seasonType ?? 'regular',
   });
   if (opts.week) params.set('week', String(opts.week));
@@ -122,13 +129,19 @@ export async function fetchTeams(year: number): Promise<CfbdTeam[]> {
   // team IDs/classifications can shift year to year (realignment, renamed
   // or relocated programs), and the schedule for `year` may reference a
   // team that isn't in CFBD's undated default list.
-  const res = await fetch(`${CFBD_BASE}/teams?year=${year}&division=fbs`, {
+  //
+  // CFBD's plain /teams endpoint has no classification filter at all —
+  // it only accepts `conference` and `year` — so the old `?division=fbs`
+  // was silently ignored and returned every division nationwide. CFBD
+  // has a dedicated /teams/fbs endpoint that actually does return only
+  // the FBS roster, which is what this needs.
+  const res = await fetch(`${CFBD_BASE}/teams/fbs?year=${year}`, {
     headers: authHeaders(),
     next: { revalidate: 60 * 60 * 24 },
   });
 
   if (!res.ok) {
-    throw new Error(`CFBD /teams failed: ${res.status} ${await res.text()}`);
+    throw new Error(`CFBD /teams/fbs failed: ${res.status} ${await res.text()}`);
   }
 
   const raw = await res.json();
@@ -137,7 +150,12 @@ export async function fetchTeams(year: number): Promise<CfbdTeam[]> {
     school: t.school as string,
     mascot: (t.mascot ?? null) as string | null,
     conference: (t.conference ?? null) as string | null,
-    classification: (t.classification ?? null) as string | null,
+    // Every team from /teams/fbs is FBS by definition — set this
+    // directly rather than trust t.classification, which this endpoint
+    // isn't documented to even include. app/api/playoff-picks/route.ts
+    // gates playoff-pick eligibility on this being exactly 'fbs', so a
+    // stray null here would silently lock every team out of that page.
+    classification: 'fbs',
     logos: (t.logos ?? null) as string[] | null,
   }));
 }
