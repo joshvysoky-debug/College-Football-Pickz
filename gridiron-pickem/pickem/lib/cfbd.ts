@@ -252,6 +252,36 @@ function normalizeTeamName(name: string): string {
 }
 
 /**
+ * Schools where CFBD's `school` field and ESPN's `team.location` field are
+ * genuinely different words/abbreviations for the same program, so no
+ * amount of punctuation/case normalization makes them line up. Keyed
+ * either direction (order doesn't matter) as normalized strings.
+ *
+ * This is a best-effort starting list, not exhaustive — the real fix is
+ * that fetchLiveScoreboard now reports which games it couldn't match (see
+ * `unmatched` below and app/api/sync/live/route.ts) instead of just
+ * silently leaving that game's card frozen. Add to this list as real
+ * mismatches surface there, rather than guessing more up front.
+ */
+const KNOWN_NAME_ALIASES: Record<string, string> = {
+  connecticut: 'uconn',
+  massachusetts: 'umass',
+  floridainternational: 'fiu',
+  southernmississippi: 'southernmiss',
+  louisianamonroe: 'ulmonroe',
+};
+
+/** Every normalized spelling a school might plausibly appear under. */
+function aliasCandidates(normalized: string): string[] {
+  const candidates = [normalized];
+  for (const [a, b] of Object.entries(KNOWN_NAME_ALIASES)) {
+    if (normalized === a) candidates.push(b);
+    else if (normalized === b) candidates.push(a);
+  }
+  return candidates;
+}
+
+/**
  * Maps game id -> live/final state (status/period/clock/score/completed).
  *
  * CFBD's own live scoreboard endpoint (`/scoreboard`) requires a Patreon
@@ -288,11 +318,25 @@ function normalizeTeamName(name: string): string {
  * change shape or disappear without notice, any failure is logged and
  * swallowed so the rest of the sync still succeeds.
  */
+export type LiveScoreboardResult = {
+  live: Map<number, CfbdLiveStatus>;
+  /**
+   * Games that didn't match anything ESPN reported in progress/final for
+   * the date queried, even after the KNOWN_NAME_ALIASES fallback. Some of
+   * these are just games that haven't kicked off yet (expected, not a
+   * bug) — the caller decides which of these are actually worth flagging
+   * (see app/api/sync/live/route.ts, which only surfaces the ones whose
+   * kickoff has already passed).
+   */
+  unmatched: Array<{ id: number; home_team: string; away_team: string }>;
+};
+
 export async function fetchLiveScoreboard(
   games: Pick<CfbdGame, 'id' | 'home_team' | 'away_team'>[]
-): Promise<Map<number, CfbdLiveStatus>> {
-  const result = new Map<number, CfbdLiveStatus>();
-  if (games.length === 0) return result;
+): Promise<LiveScoreboardResult> {
+  const live = new Map<number, CfbdLiveStatus>();
+  const unmatched: Array<{ id: number; home_team: string; away_team: string }> = [];
+  if (games.length === 0) return { live, unmatched };
 
   try {
     const url = `${ESPN_SCOREBOARD_BASE}?groups=80&limit=1000&dates=${todayEspnDateParam()}`;
@@ -300,7 +344,7 @@ export async function fetchLiveScoreboard(
 
     if (!res.ok) {
       console.error(`ESPN scoreboard failed: ${res.status} ${await res.text()}`);
-      return result;
+      return { live, unmatched: [] };
     }
 
     const raw = await res.json();
@@ -346,15 +390,32 @@ export async function fetchLiveScoreboard(
     }
 
     for (const g of games) {
-      const key = `${normalizeTeamName(g.home_team)}|${normalizeTeamName(g.away_team)}`;
-      const live = liveByTeamPair.get(key);
-      if (live) result.set(g.id, live);
+      const homeCandidates = aliasCandidates(normalizeTeamName(g.home_team));
+      const awayCandidates = aliasCandidates(normalizeTeamName(g.away_team));
+
+      let hit: CfbdLiveStatus | undefined;
+      outer: for (const h of homeCandidates) {
+        for (const a of awayCandidates) {
+          hit = liveByTeamPair.get(`${h}|${a}`);
+          if (hit) break outer;
+        }
+      }
+
+      if (hit) {
+        live.set(g.id, hit);
+      } else {
+        unmatched.push({ id: g.id, home_team: g.home_team, away_team: g.away_team });
+      }
     }
   } catch (err) {
     console.error('ESPN scoreboard fetch threw (non-fatal)', err);
+    // A hard failure here means we never got ESPN's events at all, so we
+    // don't actually know which games "should" have matched — reporting
+    // all of them as unmatched would just be noise.
+    return { live, unmatched: [] };
   }
 
-  return result;
+  return { live, unmatched };
 }
 
 /**
@@ -370,103 +431,4 @@ export async function fetchLiveScoreboard(
  * the `playoff_field` table as having a manual-override escape hatch if
  * this ever comes back short.
  */
-export async function fetchActualPlayoffField(year: number): Promise<number[]> {
-  const games = await fetchGames({ year, seasonType: 'postseason' });
-
-  const roundNamePattern = /first round|quarterfinal/i;
-  const teamIds = new Set<number>();
-
-  for (const g of games) {
-    if (!g.notes || !roundNamePattern.test(g.notes)) continue;
-    teamIds.add(g.home_id);
-    teamIds.add(g.away_id);
-  }
-
-  return Array.from(teamIds);
-}
-
-/**
- * Which season "now" falls in. Just a calendar-year read — CFBD seasons
- * are named for the year they're played in, and that never needs
- * "current week"-style guesswork the way week numbers do.
- *
- * This used to also return a `week`, first computed from a fixed Aug 24
- * start-date and rigid 7-day buckets, then later from CFBD's own
- * per-game week numbering. Both are gone now: CFBD's week boundaries
- * don't match what the group (or ESPN) actually mean by "Week 1" — see
- * `fetchEspnWeeks` below, which is now the one place "week" is defined
- * for this whole app. Both the display pages (via `getDisplayWeek` in
- * lib/currentWeek.ts) and the sync routes read from it.
- */
-export function currentSeasonAndWeek(now = new Date()): { season: number } {
-  return { season: now.getUTCFullYear() };
-}
-
-export type EspnWeek = {
-  number: number;
-  startDate: string;
-  endDate: string;
-};
-
-/**
- * ESPN's own regular-season week boundaries for a year — the same
- * calendar that drives espn.com's schedule and scoreboard week groupings,
- * fetched from ESPN's (undocumented but free, no-key) seasons endpoint.
- *
- * This app used to trust CFBD's own per-game `week` field for grouping
- * games into weeks. That turned out to be wrong: CFBD's internal week
- * numbering doesn't match ESPN's (or the group's) — for the 2026 season,
- * CFBD calls only Sept 3-6 "Week 1", while ESPN (and everyone actually
- * watching the sport) calls Aug 22 - Sep 7 "Week 1", folding in every
- * season-opening game rather than giving them a separate "Week 0". Since
- * "Week 1" needs to mean what the group actually means by it, ESPN's
- * calendar — not CFBD's week field — is now the definition this app uses;
- * see determineOurWeek below for how each game gets bucketed by it.
- */
-export async function fetchEspnWeeks(year: number): Promise<EspnWeek[]> {
-  const res = await fetch(
-    `https://site.api.espn.com/apis/common/v3/sports/football/college-football/seasons?startingseason=${year}`,
-    { next: { revalidate: 60 * 60 * 12 } }
-  );
-
-  if (!res.ok) {
-    throw new Error(`ESPN seasons failed: ${res.status} ${await res.text()}`);
-  }
-
-  const raw = await res.json();
-  const seasons = (raw.seasons ?? []) as Array<Record<string, unknown>>;
-  const season = seasons.find((s) => s.year === year);
-  if (!season) return [];
-
-  const types = (season.types ?? []) as Array<Record<string, unknown>>;
-  // ESPN's schema: type 1 = Preseason, 2 = Regular Season, 3 = Postseason,
-  // 4 = Off Season. Only the regular season's weeks apply here — postseason
-  // games are handled separately (see fetchActualPlayoffField).
-  const regular = types.find((t) => t.type === 2);
-  if (!regular) return [];
-
-  const weeks = (regular.weeks ?? []) as Array<Record<string, unknown>>;
-  return weeks.map((w) => ({
-    number: w.number as number,
-    startDate: w.startDate as string,
-    endDate: w.endDate as string,
-  }));
-}
-
-/**
- * Which of `weeks` a given date falls in, by ESPN's own boundaries.
- * Falls back to the first week if `date` is before the season, and the
- * last known week if after (this app doesn't track postseason weeks).
- */
-export function getWeekForDate(weeks: EspnWeek[], date: Date): number {
-  if (weeks.length === 0) return 1;
-  const sorted = [...weeks].sort((a, b) => a.number - b.number);
-
-  for (const w of sorted) {
-    if (date >= new Date(w.startDate) && date <= new Date(w.endDate)) {
-      return w.number;
-    }
-  }
-  if (date < new Date(sorted[0].startDate)) return sorted[0].number;
-  return sorted[sorted.length - 1].number;
-}
+export async function
