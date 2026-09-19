@@ -58,7 +58,7 @@ export async function GET(request: NextRequest) {
     // and skipping them keeps this from ever touching a graded game.
     const { data: games, error: gamesError } = await supabase
       .from('games')
-      .select('id, home_team_id, away_team_id, home_points, away_points')
+      .select('id, home_team_id, away_team_id, home_points, away_points, start_date')
       .eq('season', season)
       .in('week', week > 1 ? [week - 1, week] : [week])
       .eq('completed', false);
@@ -99,7 +99,25 @@ export async function GET(request: NextRequest) {
       })
       .filter((g): g is { id: number; home_team: string; away_team: string } => g !== null);
 
-    const liveScoreboard = await fetchLiveScoreboard(espnInput);
+    const { live: liveScoreboard, unmatched } = await fetchLiveScoreboard(espnInput);
+
+    // A game that hasn't kicked off yet is *expected* to have no ESPN
+    // "in progress" entry, so that's not worth flagging. Only surface
+    // unmatched games whose kickoff is already comfortably in the past —
+    // those are the real "name mismatch or ESPN hasn't picked it up"
+    // cases worth a look (see KNOWN_NAME_ALIASES in lib/cfbd.ts).
+    const KICKOFF_GRACE_MS = 20 * 60 * 1000;
+    const now = Date.now();
+    const startDateById = new Map(games.map((g) => [g.id, g.start_date]));
+    const staleUnmatched = unmatched.filter((u) => {
+      const startDate = startDateById.get(u.id);
+      if (!startDate) return false;
+      return new Date(startDate).getTime() < now - KICKOFF_GRACE_MS;
+    });
+
+    if (staleUnmatched.length > 0) {
+      console.warn('live sync: no ESPN match for games past kickoff', staleUnmatched);
+    }
 
     const updates = games
       .map((g) => {
@@ -148,18 +166,40 @@ export async function GET(request: NextRequest) {
     // NOT NULL column (season, week, start_date, etc.) supplied or it can
     // fail the insert path Postgres builds internally, and this route
     // only ever touches games that already exist.
+    //
+    // Each update is independent — deliberately NOT wrapped in a
+    // fail-fast check. Every one of these has already gone out over the
+    // network and landed (or not) by the time Promise.all resolves, so
+    // one bad row erroring can't stop the others from succeeding. It
+    // used to `throw` on the first error, which turned one game's bad
+    // update into a 500 for the whole request every single run — with
+    // no visibility into which game or why, that one row would just
+    // silently sit frozen at its last good value indefinitely while
+    // every other game on the slate kept updating fine.
+    const failed: Array<{ id: number; error: string }> = [];
     if (updates.length > 0) {
       const results = await Promise.all(
-        updates.map((u) => {
+        updates.map(async (u) => {
           const { id, ...fields } = u;
-          return supabase.from('games').update(fields).eq('id', id);
+          const { error } = await supabase.from('games').update(fields).eq('id', id);
+          return { id, error };
         })
       );
-      const firstError = results.find((r) => r.error)?.error;
-      if (firstError) throw firstError;
+      for (const r of results) {
+        if (r.error) failed.push({ id: r.id, error: r.error.message });
+      }
+      if (failed.length > 0) {
+        console.error('live sync: some game updates failed', failed);
+      }
     }
 
-    return NextResponse.json({ ok: true, checked: games.length, updated: updates.length });
+    return NextResponse.json({
+      ok: true,
+      checked: games.length,
+      updated: updates.length - failed.length,
+      unmatched: staleUnmatched,
+      failed,
+    });
   } catch (err) {
     console.error('live sync failed', err);
     return NextResponse.json(
