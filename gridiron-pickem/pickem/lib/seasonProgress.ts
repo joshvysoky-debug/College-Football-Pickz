@@ -7,21 +7,25 @@ export type PlayerSeries = {
   userId: string;
   name: string;
   points: number[]; // cumulative Article III points, aligned index-for-index with `weeks`
+  ranks: number[]; // place in the standings at the end of each week (1 = first), aligned with `weeks`
 };
 
 /**
- * Builds each player's cumulative Article III weekly-scoring point total by
- * week, for the season points chart on the Standings page.
+ * Builds each player's cumulative Article III weekly-scoring point total and
+ * standings place by week, for the season chart on the Standings page.
  *
- * This intentionally charts weekly game-pick points only, not the Article V
+ * This intentionally uses weekly game-pick points only, not the Article V
  * playoff-prediction bonus — that bonus resolves all at once at the end of
  * the season rather than week by week, so it's shown as part of the season
  * total in the standings table instead of as a step in this chart.
  *
+ * Places use standard competition ranking: players tied on points share a
+ * place and the next place is skipped (e.g. 1, 2, 2, 4).
+ *
  * - `games` should be every *completed* game this season (any week).
  * - `picks` should cover all picks made on those games.
  * - `nameById` is the full set of players to plot, even ones with zero
- *   points so far (they still get a flat line at 0).
+ *   points so far (they still get a place each week).
  */
 export function buildSeasonProgress({
   games,
@@ -58,11 +62,21 @@ export function buildSeasonProgress({
       running += userWeeks.get(w) ?? 0;
       return running;
     });
-    return { userId, name, points };
+    return { userId, name, points, ranks: [] };
   });
 
-  // Highest current total first, so the legend order roughly tracks the standings.
-  series.sort((a, b) => (b.points.at(-1) ?? 0) - (a.points.at(-1) ?? 0));
+  // Place at the end of each week, from that week's cumulative totals.
+  weeks.forEach((_, i) => {
+    for (const s of series) {
+      const mine = s.points[i];
+      s.ranks[i] = 1 + series.filter((o) => o.points[i] > mine).length;
+    }
+  });
+
+  // Current place first (ties broken by name), so the legend order tracks the standings.
+  series.sort(
+    (a, b) => (a.ranks.at(-1) ?? 0) - (b.ranks.at(-1) ?? 0) || a.name.localeCompare(b.name)
+  );
 
   return { weeks, series };
 }
