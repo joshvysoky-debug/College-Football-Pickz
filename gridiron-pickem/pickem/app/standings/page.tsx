@@ -19,6 +19,11 @@ export default async function StandingsPage() {
         .select('*')
         .eq('season', season)
         .eq('completed', true)
+        // Only games that were actually part of the pick'em (ranked or SEC).
+        // Without this, a pick on a game that later dropped out of the
+        // featured set still counted toward one player's record but not
+        // anyone else's, so "possible picks" stopped lining up.
+        .eq('featured', true)
         .order('week', { ascending: true }),
       supabase.from('playoff_picks').select('user_id, team_id').eq('season', season),
       supabase.from('playoff_field').select('team_id').eq('season', season),
@@ -27,10 +32,28 @@ export default async function StandingsPage() {
   const games = (completedGames ?? []) as Game[];
   const gameIds = games.map((g) => g.id);
 
-  const { data: picksData } =
-    gameIds.length > 0
-      ? await supabase.from('picks').select('game_id, picked_team_id, user_id').in('game_id', gameIds)
-      : { data: [] as PickRow[] };
+  // Supabase caps a single response at 1,000 rows and silently drops the
+  // rest. A full season of picks across the whole group passes that well
+  // before the season ends, and whoever's rows land last loses picks from
+  // the standings. Page through in 1,000-row chunks so nothing is cut off.
+  const picksData: PickRow[] = [];
+  if (gameIds.length > 0) {
+    const PAGE_SIZE = 1000;
+    for (let from = 0; ; from += PAGE_SIZE) {
+      const { data, error } = await supabase
+        .from('picks')
+        .select('game_id, picked_team_id, user_id')
+        .in('game_id', gameIds)
+        .order('id', { ascending: true })
+        .range(from, from + PAGE_SIZE - 1);
+      if (error) {
+        console.error('StandingsPage: failed to load picks', error);
+        break;
+      }
+      picksData.push(...((data ?? []) as PickRow[]));
+      if (!data || data.length < PAGE_SIZE) break;
+    }
+  }
 
   const nameById = new Map<string, string>(
     (profiles ?? []).map((p) => [p.id, p.display_name?.trim() || 'Anonymous'])
@@ -38,7 +61,7 @@ export default async function StandingsPage() {
 
   const { weeks, series } = buildSeasonProgress({
     games,
-    picks: picksData ?? [],
+    picks: picksData,
     nameById,
   });
 
@@ -46,7 +69,7 @@ export default async function StandingsPage() {
 
   const standings = buildStandings({
     games,
-    picks: picksData ?? [],
+    picks: picksData,
     playoffPicks: playoffPicks ?? [],
     playoffFieldTeamIds,
     profiles: profiles ?? [],
