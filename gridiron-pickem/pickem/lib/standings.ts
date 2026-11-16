@@ -44,18 +44,31 @@ export function buildStandings({
   const correctByUser = new Map<string, number>();
   const completedByUser = new Map<string, number>();
 
+  // Score every completed game for every player, not just the picks each
+  // player happened to make. A missed pick counts as a game played with no
+  // points (same as lib/weeklyRecap.ts), so everyone's "possible picks"
+  // total is the same: the number of completed featured games.
+  const pickByUserAndGame = new Map<string, number>();
   for (const p of picks) {
-    const game = gameById.get(p.game_id);
-    if (!game || !game.completed) continue;
+    if (gameById.has(p.game_id)) {
+      pickByUserAndGame.set(`${p.user_id}:${p.game_id}`, p.picked_team_id);
+    }
+  }
 
-    const result = scorePick({ game, pickedTeamId: p.picked_team_id });
-    if (!result) continue;
+  for (const pr of profiles) {
+    for (const game of games) {
+      if (!game.completed) continue;
 
-    weeklyPointsByUser.set(p.user_id, (weeklyPointsByUser.get(p.user_id) ?? 0) + result.points);
-    completedByUser.set(p.user_id, (completedByUser.get(p.user_id) ?? 0) + 1);
+      const pickedTeamId = pickByUserAndGame.get(`${pr.id}:${game.id}`) ?? null;
+      const result = scorePick({ game, pickedTeamId });
+      if (!result) continue;
 
-    if (result.outcome !== 'incorrect' && result.outcome !== 'ot_loss' && result.outcome !== 'no_pick') {
-      correctByUser.set(p.user_id, (correctByUser.get(p.user_id) ?? 0) + 1);
+      weeklyPointsByUser.set(pr.id, (weeklyPointsByUser.get(pr.id) ?? 0) + result.points);
+      completedByUser.set(pr.id, (completedByUser.get(pr.id) ?? 0) + 1);
+
+      if (result.outcome !== 'incorrect' && result.outcome !== 'ot_loss' && result.outcome !== 'no_pick') {
+        correctByUser.set(pr.id, (correctByUser.get(pr.id) ?? 0) + 1);
+      }
     }
   }
 
