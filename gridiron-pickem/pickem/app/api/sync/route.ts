@@ -194,9 +194,27 @@ export async function GET(request: NextRequest) {
       if (error) throw error;
     }
 
+    // A given week's AP poll often isn't in CFBD yet when this runs (it can
+    // lag the Sunday release by a day or more). Without a fallback, every
+    // team in that week reads as unranked and only SEC matchups stay
+    // featured. So use that week's poll if we have it, otherwise the most
+    // recent earlier poll we do have. This is only used to flag games; it
+    // is never written to ap_rankings, so the real poll replaces it on the
+    // next sync once CFBD publishes it.
+    const capturedWeekNumbers = [...rankingsByWeek.keys()].sort((a, b) => b - a);
+    const rankingsForWeek = (week: number): Map<string, number> | undefined => {
+      const exact = rankingsByWeek.get(week);
+      if (exact && exact.size > 0) return exact;
+      const fallbackWeek = capturedWeekNumbers.find(
+        (w) => w < week && (rankingsByWeek.get(w)?.size ?? 0) > 0
+      );
+      return fallbackWeek !== undefined ? rankingsByWeek.get(fallbackWeek) : undefined;
+    };
+
     const gameRows = games.map((g) => {
-      const homeRank = rankingsByWeek.get(g.week)?.get(g.home_team) ?? null;
-      const awayRank = rankingsByWeek.get(g.week)?.get(g.away_team) ?? null;
+      const weekRanks = rankingsForWeek(g.week);
+      const homeRank = weekRanks?.get(g.home_team) ?? null;
+      const awayRank = weekRanks?.get(g.away_team) ?? null;
       const isRanked = homeRank !== null || awayRank !== null;
       const isSecMatchup =
         confByTeamId.get(g.home_id) === 'SEC' || confByTeamId.get(g.away_id) === 'SEC';
@@ -303,6 +321,11 @@ export async function GET(request: NextRequest) {
       gamesSynced: gameRows.length,
       apRankingWeeksFetched: weeksToFetch.length,
       apRankingRowsWritten: newRankingRows.length,
+      // CFBD weeks whose own AP poll wasn't available, so games were
+      // flagged using the most recent earlier poll instead.
+      apRankingFallbackWeeks: [...allCfbdWeeks]
+        .filter((w) => !(rankingsByWeek.get(w)?.size))
+        .sort((a, b) => a - b),
       spRanksFound: spRanks.size,
       liveGamesFound: liveScoreboard.size,
       playoffFieldSynced,
